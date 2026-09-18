@@ -1,0 +1,30 @@
+name: Проверка ядра
+
+# Я-04: своей сборки и сайта у ядра нет, и красное ядро иначе всплыло бы
+# только при обновлении указателя подмодуля в приложении.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Типы и тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # ci, а не install: ставит ровно то, что в package-lock.json.
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
