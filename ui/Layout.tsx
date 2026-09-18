@@ -1,25 +1,21 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import type { ScreenKey } from './screenNames.ts'
 import { ScrollButtons } from './ScrollButtons.tsx'
-import { useScreenNames } from './useScreenNames.ts'
+
+/** Вкладка нижней панели: адрес, подпись, совпадение адреса целиком. */
+export type Tab = { to: string; name: string; end: boolean }
 
 /**
  * Нижняя панель: только то, что открывают каждый день. Вкладки прибавляются
  * вместе с экранами, по этапам.
  *
  * «Настроек» здесь нет намеренно, как и в «Дневниках»: в них заходят раз
- * в месяц, и живут они шестерёнкой в шапке «Сегодня».
+ * в месяц, и живут они шестерёнкой в шапке главного экрана.
+ *
+ * Список вкладок — приложения (Р-16, Р-48 «Трапезы»): адреса и подписи у
+ * каждого свои, у «Делу Время» подписи ещё и настройка устройства
+ * (Р-26 «Делу Время»). Ядро рисует то, что дали.
  */
-const TABS: readonly { to: string; screen: ScreenKey; end: boolean }[] = [
-  { to: '/', screen: 'today', end: true },
-  { to: '/time', screen: 'time', end: false },
-  { to: '/inbox', screen: 'inbox', end: false },
-]
-
-export function Layout() {
-  // Подписи — из настроек устройства (Р-26 «Делу Время»), адреса — постоянные.
-  const names = useScreenNames()
-
+export function Layout({ tabs }: { tabs: readonly Tab[] }) {
   return (
     <div className="layout">
       <main className="content">
@@ -30,14 +26,14 @@ export function Layout() {
       <ScrollButtons />
 
       <nav className="tabs">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
             end={tab.end}
             className={({ isActive }) => (isActive ? 'tab tab--active' : 'tab')}
           >
-            {names[tab.screen]}
+            {tab.name}
           </NavLink>
         ))}
       </nav>

@@ -1,4 +1,4 @@
-import type { Change } from '../changes.ts'
+import type { Change } from './changes.ts'
 import { formatDate } from '../core/dates.ts'
 
 /**

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { db } from '../core/db.ts'
+import type { KeyValue } from '../core/db.ts'
+import { useCore } from '../ui/core.tsx'
 import { useInstall } from '../ui/install.ts'
 import {
   iosNote,
   isEmptyBase,
-  OWN_STORES,
   showWelcome,
   type Counts,
   type IosNoteKind,
@@ -34,9 +34,9 @@ export type FirstRun = {
   hideIosNote: () => void
 }
 
-async function readFlag(key: string): Promise<boolean> {
+async function readFlag(settings: KeyValue, key: string): Promise<boolean> {
   try {
-    return (await db.settings.get<boolean>(key)) === true
+    return (await settings.get<boolean>(key)) === true
   } catch {
     return false
   }
@@ -44,11 +44,16 @@ async function readFlag(key: string): Promise<boolean> {
 
 /**
  * Пуста ли база и что из этого следует на «Сегодня». Взято из «Дневников».
+ * `own` — хранилища, где лежат записи человека (`firstRun.ts`).
  * Пересчитывается на любую запись — своей рукой или приехавшую
  * синхронизацией. Пока ничего не прочитано, не показывает ничего:
  * мигнуть приветствием у человека с данными хуже, чем опоздать на миг.
  */
-export function useFirstRun(): FirstRun {
+export function useFirstRun(own: readonly string[]): FirstRun {
+  const { db } = useCore()
+  // Список сравнивается по содержимому: приложение вправе собирать его
+  // заново на каждой отрисовке.
+  const ownKey = own.join(',')
   const [counts, setCounts] = useState<Counts | null>(null)
   const [done, setDone] = useState<boolean | null>(null)
   const [hiddenForever, setHiddenForever] = useState(false)
@@ -61,7 +66,7 @@ export function useFirstRun(): FirstRun {
     async function count() {
       try {
         const next: Counts = {}
-        for (const store of OWN_STORES) next[store] = await db.count(store)
+        for (const store of own) next[store] = await db.count(store)
         if (alive) setCounts(next)
       } catch {
         // База не открылась — об этом скажут «Настройки». Здесь молчим.
@@ -69,25 +74,25 @@ export function useFirstRun(): FirstRun {
     }
 
     void count()
-    void readFlag(WELCOME_DONE).then((value) => {
+    void readFlag(db.settings, WELCOME_DONE).then((value) => {
       if (alive) setDone(value)
     })
-    void readFlag(IOS_NOTE_HIDDEN).then((value) => {
+    void readFlag(db.settings, IOS_NOTE_HIDDEN).then((value) => {
       if (alive) setHiddenForever(value)
     })
 
-    const stores: readonly string[] = OWN_STORES
     const off = db.onChange((event) => {
-      if (stores.includes(event.store)) void count()
+      if (own.includes(event.store)) void count()
     })
     return () => {
       alive = false
       off()
     }
-  }, [])
+    // own — по ownKey: новый массив с тем же содержимым не повод перечитывать.
+  }, [db, ownKey])
 
   const known = counts !== null && done !== null
-  const empty = counts === null || isEmptyBase(counts)
+  const empty = counts === null || isEmptyBase(counts, own)
   const welcome = known && showWelcome({ empty, done })
 
   return {

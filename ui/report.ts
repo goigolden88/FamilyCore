@@ -6,10 +6,11 @@
  * в публичный issue или в мессенджер, и человек видит его целиком до отправки.
  *
  * Сборка отчёта и адрес issue — чистые функции с тестами. Ниже — журнал:
- * ловля необработанных ошибок страницы и запись через `db`.
+ * ловля необработанных ошибок страницы и запись в `settings` базы приложения —
+ * она приходит аргументом (Я-03).
  */
 
-import { db } from '../core/db.ts'
+import type { KeyValue } from '../core/db.ts'
 import type { SyncState } from '../core/sync.ts'
 
 /** Одна ошибка страницы: когда, текст, на каком экране. */
@@ -143,6 +144,9 @@ export function issueUrl(
 /** Записи журнала идут очередью: две ошибки разом не должны затереть друг друга. */
 let writes: Promise<void> = Promise.resolve()
 
+/** Куда пишется журнал. Приходит в `listenErrors`; до этого ошибки не пишутся. */
+let journal: KeyValue | null = null
+
 /**
  * Экран, на котором случилась ошибка, — путь без запроса (Р-66 «Делу Время»). В запросе
  * здесь бывает текст из «Поделиться», `#/inbox?shared=…` (Р-16 «Делу Время»), а отчёт
@@ -161,7 +165,7 @@ function record(message: string): void {
   }
   writes = writes.then(async () => {
     try {
-      await db.settings.set(KEY, appendError(await db.settings.get<unknown>(KEY), error))
+      if (journal) await journal.set(KEY, appendError(await journal.get<unknown>(KEY), error))
     } catch {
       // Журнал — не повод падать. И не повод писать в журнал.
     }
@@ -177,8 +181,11 @@ function describe(value: unknown): string {
  * Ловит необработанные ошибки страницы. Зовётся один раз из `main.tsx`,
  * до первого экрана: ошибка при отрисовке тоже должна попасть в журнал —
  * React 19 сообщает о ней событием `error` окна.
+ *
+ * `settings` — настройки базы приложения: журнал у каждого устройства свой.
  */
-export function listenErrors(): void {
+export function listenErrors(settings: KeyValue): void {
+  journal = settings
   window.addEventListener('error', (event) => {
     record(event.error instanceof Error ? describe(event.error) : event.message)
   })
@@ -187,12 +194,12 @@ export function listenErrors(): void {
   })
 }
 
-export async function readErrors(): Promise<AppError[]> {
-  const stored = await db.settings.get<unknown>(KEY)
+export async function readErrors(settings: KeyValue): Promise<AppError[]> {
+  const stored = await settings.get<unknown>(KEY)
   return Array.isArray(stored) ? stored.filter(isAppError) : []
 }
 
-export async function clearErrors(): Promise<void> {
+export async function clearErrors(settings: KeyValue): Promise<void> {
   await writes
-  await db.settings.remove(KEY)
+  await settings.remove(KEY)
 }

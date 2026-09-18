@@ -17,9 +17,15 @@
  */
 
 import { useEffect, useSyncExternalStore } from 'react'
-import { db } from '../core/db.ts'
+import type { KeyValue } from '../core/db.ts'
 
 const KEY = 'folds'
+
+/**
+ * Настройки устройства, где лежит карта. Приходят один раз — `startFolds`
+ * из `CoreProvider` (Я-03). До этого все блоки в умолчании.
+ */
+let settings: KeyValue | null = null
 
 type Folds = Record<string, boolean>
 
@@ -48,13 +54,14 @@ function snapshot(): Folds | null {
 /** Не прочиталось — все блоки в умолчании. Сворачивание не повод показывать ошибку. */
 async function read(): Promise<Folds> {
   try {
-    return (await db.settings.get<Folds>(KEY)) ?? {}
+    return (await settings?.get<Folds>(KEY)) ?? {}
   } catch {
     return {}
   }
 }
 
 function load(): Promise<void> {
+  if (!settings) return Promise.resolve()
   loading ??= read().then((stored) => {
     // Тап, случившийся до конца чтения, главнее прочитанного.
     folds = { ...stored, ...(folds ?? {}) }
@@ -67,7 +74,7 @@ function save(id: string, value: boolean): void {
   queue = queue
     .then(async () => {
       const stored = await read()
-      await db.settings.set(KEY, { ...stored, [id]: value })
+      await settings?.set(KEY, { ...stored, [id]: value })
     })
     .catch(() => undefined)
 }
@@ -81,9 +88,15 @@ function reread(): void {
     .catch(() => undefined)
 }
 
-// Читается сразу при запуске, а не при первом блоке: экран тогда рисуется
-// уже с известным состоянием.
-if (typeof document !== 'undefined') {
+/**
+ * Читается сразу при запуске, а не при первом блоке: экран тогда рисуется
+ * уже с известным состоянием. Зовёт `CoreProvider`, один раз; повтор
+ * ничего не делает.
+ */
+export function startFolds(store: KeyValue): void {
+  if (settings) return
+  settings = store
+  if (typeof document === 'undefined') return
   void load()
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') reread()

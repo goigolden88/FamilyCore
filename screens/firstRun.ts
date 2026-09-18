@@ -3,23 +3,18 @@
  *
  * Чистые функции: правила здесь неочевидные — что считать пустой базой,
  * когда возвращать скрытое, — и проверяются тестами, а не глазами.
- * Взято из «Дневников»; своё здесь — только список хранилищ.
+ * Взято из «Делу Время» с d86f0aa, у них — из «Дневников».
+ *
+ * Где лежат записи человека — список хранилищ приложения, аргументом
+ * (Я-03): у «Делу Время» справочники не в счёт, они заводятся сами, а у
+ * «Трапезы» стартовых справочников нет, и в счёт все хранилища.
  */
 
-import type { SyncedStore } from '../core/model.ts'
+export type Counts = Partial<Record<string, number>>
 
-/**
- * Где лежат записи человека. Справочники не в счёт: категории заводятся
- * сами при первом запуске (Этап 1), пресеты и шаблоны дня — только вслед
- * за записями.
- */
-export const OWN_STORES = ['notes', 'time', 'reviews'] as const satisfies readonly SyncedStore[]
-
-export type Counts = Partial<Record<SyncedStore, number>>
-
-/** Нет ни одной живой записи человека. */
-export function isEmptyBase(counts: Counts): boolean {
-  return OWN_STORES.every((store) => (counts[store] ?? 0) === 0)
+/** Нет ни одной живой записи человека в хранилищах `own`. */
+export function isEmptyBase(counts: Counts, own: readonly string[]): boolean {
+  return own.every((store) => (counts[store] ?? 0) === 0)
 }
 
 /**

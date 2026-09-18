@@ -1,22 +1,16 @@
-import { useRef, useState } from 'react'
-import { db } from '../core/db.ts'
-import { nowIso, plural, today } from '../core/dates.ts'
+import { useRef, useState, type ReactNode } from 'react'
+import { nowIso, plural, today, type DateStr } from '../core/dates.ts'
+import type { StoreData } from '../core/db.ts'
 import { ulid } from '../core/id.ts'
-import { planTotal, type ImportPlan, type Writes } from '../core/importing.ts'
-import type { SyncedStore } from '../core/model.ts'
-import { importPrompt, planImport } from '../registry.ts'
+import { planTotal, type ImportContext, type ImportPlan, type Writes } from '../core/importing.ts'
+import type { StoreMap } from '../core/model.ts'
+import { useCore, type SharedDb } from '../ui/core.tsx'
 import { Fold } from '../ui/Fold.tsx'
-
-/**
- * Справочники раньше записей, которые на них ссылаются: прерванная
- * посередине запись оставит категорию без блоков, а не блок без категории.
- */
-const WRITE_ORDER: readonly SyncedStore[] = ['categories', 'presets', 'templates', 'notes', 'time', 'reviews']
 
 /** Сколько строк отчёта показывать. Остальные — числом. */
 const ISSUE_LINES = 20
 
-function write<S extends SyncedStore>(store: S, writes: Writes): Promise<unknown> {
+function write(db: SharedDb, store: string, writes: Writes): Promise<unknown> {
   const records = writes[store]
   return records && records.length > 0 ? db.putMany(store, records) : Promise.resolve()
 }
@@ -32,11 +26,27 @@ function describe(error: unknown): string {
  * приходит в чате, и сохранять его файлом ради загрузки неудобно.
  * Сначала сводка — что добавится, что уже есть, что не разобрано, —
  * запись только по кнопке.
+ *
+ * Разбор разделов и промпт — приложения, из его `registry.ts`; `intro` —
+ * его слова над полем: что сюда загружают (Я-03). Порядок записи — `stores`
+ * конфига: справочники раньше записей, которые на них ссылаются, и прерванная
+ * посередине запись оставит категорию без блоков, а не блок без категории.
  */
-export function ImportRecords({ onChanged }: { onChanged: () => Promise<void> }) {
+export function ImportRecords<R extends StoreMap>({
+  planImport,
+  importPrompt,
+  intro,
+  onChanged,
+}: {
+  planImport: (text: string, data: StoreData<R>, context: ImportContext) => ImportPlan<R>
+  importPrompt: (day: DateStr) => string
+  intro: ReactNode
+  onChanged: () => Promise<void>
+}) {
+  const { config, db } = useCore()
   const input = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')
-  const [plan, setPlan] = useState<ImportPlan | null>(null)
+  const [plan, setPlan] = useState<ImportPlan<R> | null>(null)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
@@ -46,7 +56,8 @@ export function ImportRecords({ onChanged }: { onChanged: () => Promise<void> })
     setError('')
     setPlan(null)
     try {
-      const data = (await db.exportAll()).data
+      // Слепок базы приложения — той самой, чьи хранилища знает `planImport`.
+      const data = (await db.exportAll()).data as StoreData<R>
       setPlan(planImport(source, data, { newId: ulid, now: nowIso() }))
     } catch (failure) {
       setError(describe(failure))
@@ -58,7 +69,7 @@ export function ImportRecords({ onChanged }: { onChanged: () => Promise<void> })
     setBusy(true)
     setError('')
     try {
-      for (const store of WRITE_ORDER) await write(store, plan.writes)
+      for (const store of config.stores) await write(db, store, plan.writes as Writes)
       setNote(`Загружено записей: ${planTotal(plan)}`)
       setPlan(null)
       setText('')
@@ -72,10 +83,10 @@ export function ImportRecords({ onChanged }: { onChanged: () => Promise<void> })
 
   return (
     <div className="import">
+      {intro}
       <p className="muted">
-        Записи из таблиц, заметок и других сервисов. Файл готовится по промпту ниже — например, с ИИ.
-        Импорт только добавляет: то, что уже есть, не перезаписывается, и повторная загрузка
-        ничего не удвоит.
+        Файл готовится по промпту ниже — например, с ИИ. Импорт только добавляет: то, что уже есть,
+        не перезаписывается, и повторная загрузка ничего не удвоит.
       </p>
 
       <textarea
@@ -113,7 +124,7 @@ export function ImportRecords({ onChanged }: { onChanged: () => Promise<void> })
 
       {plan && <Plan plan={plan} busy={busy} onApply={() => void apply()} onCancel={() => setPlan(null)} />}
 
-      <Prompt />
+      <Prompt prompt={importPrompt(today())} sources={config.about.sources} />
     </div>
   )
 }
@@ -124,7 +135,7 @@ function Plan({
   onApply,
   onCancel,
 }: {
-  plan: ImportPlan
+  plan: ImportPlan<StoreMap>
   busy: boolean
   onApply: () => void
   onCancel: () => void
@@ -175,14 +186,13 @@ function Plan({
  * Промпт — свёрнутым: он длинный, а нужен раз. Копируется кнопкой; не
  * вышло (браузер не дал доступа к буферу) — текст виден и выделяется руками.
  */
-function Prompt() {
+function Prompt({ prompt, sources }: { prompt: string; sources: string }) {
   const [copied, setCopied] = useState('')
-  const prompt = importPrompt(today())
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(prompt)
-      setCopied('Промпт скопирован — вставь его в чат с ИИ и добавь свои записи.')
+      setCopied('Промпт скопирован — вставь его в чат с ИИ и добавь свои данные.')
     } catch {
       setCopied('Скопировать не вышло — открой промпт ниже и выдели его вручную.')
     }
@@ -193,7 +203,7 @@ function Prompt() {
     <Fold id="settings:import:how" title="Как подготовить файл" sub folded>
       <ol>
         <li>Скопируй промпт и вставь в чат с ИИ — ChatGPT, Claude, любой.</li>
-        <li>Добавь в конце свои записи: текст заметок, таблицу или скриншоты.</li>
+        <li>Добавь в конце свои данные — {sources}.</li>
         <li>Ответ — JSON — вставь в поле выше и нажми «Разобрать». До записи будет видно, что добавится.</li>
       </ol>
       <button type="button" className="btn" onClick={() => void copy()}>

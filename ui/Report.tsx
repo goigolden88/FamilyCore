@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SCHEMA_VERSION } from '../core/model.ts'
+import { useCore } from './core.tsx'
 import { useInstall } from './install.ts'
 import { clearErrors, issueUrl, ISSUE_TITLE, readErrors, reportText, type AppError } from './report.ts'
 import { useSyncStatus } from './useSync.ts'
@@ -11,20 +11,21 @@ import { useSyncStatus } from './useSync.ts'
  * и дописывает, что случилось. Сам ничего никуда не отправляет.
  */
 export function ReportBug() {
+  const { config, db } = useCore()
   const { advice } = useInstall()
   const sync = useSyncStatus()
   const [errors, setErrors] = useState<AppError[] | null>(null)
   const [note, setNote] = useState('')
 
   useEffect(() => {
-    void readErrors().then(setErrors)
-  }, [])
+    void readErrors(db.settings).then(setErrors)
+  }, [db])
 
   if (errors === null) return <p className="muted">Читаю журнал ошибок…</p>
 
   const text = reportText({
     built: __BUILD_TIME__,
-    schema: SCHEMA_VERSION,
+    schema: config.schemaVersion,
     userAgent: navigator.userAgent,
     installed: advice === 'installed',
     viewport: { width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio },
@@ -55,7 +56,7 @@ export function ReportBug() {
   }
 
   async function clear() {
-    await clearErrors()
+    await clearErrors(db.settings)
     setErrors([])
     setNote('Журнал ошибок очищен')
   }

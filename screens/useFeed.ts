@@ -6,13 +6,17 @@
  * чужое, из файла. Слепок, а не выборка по хранилищу: он отдаёт записи
  * вместе с надгробиями, а без них у блока удалённой категории не было бы
  * имени.
+ *
+ * Строки собирает приложение — `feedItems` его `registry.ts` приходит
+ * аргументом (Я-03): ядро про виды записей не знает.
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { db } from '../core/db.ts'
 import { today, type DateStr } from '../core/dates.ts'
+import type { StoreData } from '../core/db.ts'
 import type { FeedItem } from '../core/feed.ts'
-import { feedItems, type Data } from '../registry.ts'
+import type { StoreMap } from '../core/model.ts'
+import { useCore } from '../ui/core.tsx'
 
 export type Feed = {
   status: 'loading' | 'ready' | 'failed'
@@ -20,8 +24,12 @@ export type Feed = {
   items: FeedItem[]
 }
 
-export function useFeed(): Feed {
-  const [data, setData] = useState<Data | null>(null)
+/** Строки ленты по всем данным приложения на день `day`. */
+export type FeedBuilder<R extends StoreMap> = (data: StoreData<R>, day: DateStr) => FeedItem[]
+
+export function useFeed<R extends StoreMap>(feedItems: FeedBuilder<R>): Feed {
+  const { db } = useCore()
+  const [data, setData] = useState<StoreData<R> | null>(null)
   const [error, setError] = useState('')
   const [day, setDay] = useState<DateStr>(today())
 
@@ -32,7 +40,8 @@ export function useFeed(): Feed {
       try {
         await db.ready()
         const snapshot = await db.exportAll()
-        if (!cancelled) setData(snapshot.data)
+        // Слепок базы приложения — той самой, чьи хранилища знает `feedItems`.
+        if (!cancelled) setData(snapshot.data as StoreData<R>)
       } catch (failure) {
         if (!cancelled) setError(failure instanceof Error ? failure.message : 'Неизвестная ошибка')
       }
@@ -44,7 +53,7 @@ export function useFeed(): Feed {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [db])
 
   // Строки вправе зависеть от сегодняшнего дня, а вкладка установленного
   // приложения неделями не перезапускается.
@@ -56,7 +65,7 @@ export function useFeed(): Feed {
     return () => document.removeEventListener('visibilitychange', refreshDay)
   }, [])
 
-  const items = useMemo(() => (data ? feedItems(data, day) : []), [data, day])
+  const items = useMemo(() => (data ? feedItems(data, day) : []), [data, day, feedItems])
 
   return {
     status: error ? 'failed' : data ? 'ready' : 'loading',
