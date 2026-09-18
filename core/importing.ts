@@ -8,26 +8,28 @@
  *
  * Слепок приложения (Р-23 «Дневников») сюда не заходит: у него свой вход,
  * «Восстановить из копии», и своё доверие — его писало приложение.
+ *
+ * Строка `format`, имя приложения и свои правила промпта приходят конфигом
+ * (Р-47 «Трапезы»): `createImporting(config)`.
  */
 
 import { formatDate, isDateOrMonth, isDateStr, type DateStr } from './dates.ts'
-import type { StoreRecord, SyncedStore } from './model.ts'
+import type { AppConfig, StoreMap, StoreOf } from './model.ts'
 
-export const IMPORT_FORMAT = 'deluvremya-import'
 export const IMPORT_VERSION = 1
 
 /** Что не так с записью — по имени и с причиной. В базу она не попадает. */
 export type Issue = { section: string; title: string; reason: string }
 
 /** Записи к добавлению по хранилищам. */
-export type Writes = { [S in SyncedStore]?: StoreRecord[S][] }
+export type Writes<R extends StoreMap = StoreMap> = { [S in StoreOf<R>]?: R[S][] }
 
 /** Сколько чего добавится — число и склонение: «3 позиции». */
 export type Added = { count: number; forms: [string, string, string] }
 
 /** Итог разбора раздела — и всего файла: у них одна форма. */
-export type ImportPlan = {
-  writes: Writes
+export type ImportPlan<R extends StoreMap = StoreMap> = {
+  writes: Writes<R>
   added: Added[]
   /** Совпали с уже имеющимися — пропущены, а не перезаписаны. */
   skipped: number
@@ -72,7 +74,11 @@ function parseLoose(text: string): unknown {
 }
 
 /** Разделы файла импорта. Кидает с объяснением, если файл не тот. */
-export function readImportFile(text: string): Record<string, unknown> {
+function readSections(
+  text: string,
+  config: { importFormat: string; name: string },
+): Record<string, unknown> {
+  const IMPORT_FORMAT = config.importFormat
   const value = parseLoose(text)
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('В файле не объект с разделами')
@@ -83,7 +89,9 @@ export function readImportFile(text: string): Record<string, unknown> {
     throw new Error('Это копия приложения, а не импорт записей. Её загружают кнопкой «Восстановить из копии»')
   }
   if (raw.format !== IMPORT_FORMAT) {
-    throw new Error(`В файле нет строки "format": "${IMPORT_FORMAT}" — это не импорт записей «Делу Время»`)
+    throw new Error(
+      `В файле нет строки "format": "${IMPORT_FORMAT}" — это не импорт записей приложения «${config.name}»`,
+    )
   }
   if (typeof raw.version === 'number' && raw.version > IMPORT_VERSION) {
     throw new Error('Файл сделан для более новой версии приложения. Обнови приложение')
@@ -169,24 +177,24 @@ export function recordsOf(
 
 // ─── Сведение ──────────────────────────────────────────────────────────────
 
-function append(target: Writes, source: Writes, store: SyncedStore): void {
+function append<R extends StoreMap>(target: Writes<R>, source: Writes<R>, store: StoreOf<R>): void {
   // Записи берутся из того же хранилища источника, в какое кладутся, но
   // связь ключа с типом записей TypeScript здесь не проследит.
   const records = source[store] as unknown[] | undefined
   if (!records || records.length === 0) return
-  const bag = target as Record<SyncedStore, unknown[] | undefined>
+  const bag = target as Record<string, unknown[] | undefined>
   bag[store] = [...(bag[store] ?? []), ...records]
 }
 
 /** Разделы — в один план. Одинаковое добавленное складывается. */
-export function mergeResults(results: readonly ImportPlan[]): ImportPlan {
-  const writes: Writes = {}
+export function mergeResults<R extends StoreMap>(results: readonly ImportPlan<R>[]): ImportPlan<R> {
+  const writes: Writes<R> = {}
   const added: Added[] = []
   let skipped = 0
   const issues: Issue[] = []
 
   for (const result of results) {
-    for (const store of Object.keys(result.writes) as SyncedStore[]) append(writes, result.writes, store)
+    for (const store of Object.keys(result.writes) as StoreOf<R>[]) append(writes, result.writes, store)
     for (const each of result.added) {
       const same = added.find((other) => other.forms[2] === each.forms[2])
       if (same) same.count += each.count
@@ -200,57 +208,77 @@ export function mergeResults(results: readonly ImportPlan[]): ImportPlan {
 }
 
 /** Сколько записей ляжет в базу. */
-export function planTotal(plan: ImportPlan): number {
+export function planTotal<R extends StoreMap>(plan: ImportPlan<R>): number {
   return Object.values(plan.writes).reduce((sum, records) => sum + (records?.length ?? 0), 0)
 }
 
 // ─── Промпт ────────────────────────────────────────────────────────────────
 
 /**
- * Промпт для ИИ (Р-60 «Дневников»). Собирается из тех же описаний разделов, по которым
- * идёт проверка, — разойтись они не могут. Сегодняшняя дата внутри: без
- * неё «вчера» и год без числа не перевести.
+ * Правила промпта, общие для всей семьи, — после своих правил приложения.
+ * Свои (`promptRules` конфига) — про даты, минуты, оценку: у «Делу Время»
+ * месяц без числа законен, у «Трапезы» — нет. Правила про поля — не здесь,
+ * а в описаниях разделов: они живут в модуле, а ядро про модули не знает.
  */
-export function buildPrompt(specs: readonly ImportSpec[], day: DateStr): string {
-  const example: Record<string, unknown> = { format: IMPORT_FORMAT, version: IMPORT_VERSION }
-  for (const spec of specs) example[spec.section] = spec.example
+export const COMMON_PROMPT_RULES: readonly string[] = [
+  'Разделы, для которых данных нет, не пиши.',
+  'Ответь одним блоком JSON. Если записей очень много — раздели на несколько блоков, каждый — ' +
+    'полный файл в том же формате.',
+  'После JSON отдельным списком перечисли, что не удалось разобрать или в чём сомневаешься.',
+]
 
-  const sections = specs.map((spec) =>
-    [`"${spec.section}" — ${spec.about}`, ...spec.fields.map((field) => `  - ${field}`)].join('\n'),
-  )
+/** Импорт приложения: его строка `format`, имя в текстах и свои правила промпта. */
+export function createImporting<R extends StoreMap>(config: AppConfig<R>) {
+  /** Разделы файла импорта. Кидает с объяснением, если файл не тот. */
+  function readImportFile(text: string): Record<string, unknown> {
+    return readSections(text, config)
+  }
 
-  return [
-    'Помоги перенести мои записи в приложение «Делу Время». Ниже — описание формата, а в конце — ' +
-      'мои данные: таблицы учёта времени, заметки или скриншоты из других сервисов. Собери из них ' +
-      'один JSON строго в этом формате.',
-    '',
-    `Сегодня ${formatDate(day)}. От этой даты считай «вчера», «прошлой весной» и год там, где он не указан.`,
-    '',
-    'Правила:',
-    '1. Ничего не выдумывай. Чего нет в моих данных — не пиши: необязательное поле опусти, ' +
-      'запись без обязательного поля не пиши вовсе, а назови в списке после JSON.',
-    '2. Даты — ГГГГ-ММ-ДД. Любой вид (24.01.26, 20-02-2026, «3 марта») приводи к нему. Где это ' +
-      'разрешено и известен только месяц — например, месяц стоит заголовком раздела, — пиши ГГГГ-ММ, ' +
-      'без выдуманного числа.',
-    // Пределы минут — не здесь, а в описании поля раздела: они живут
-    // в модуле, а ядро про модули не знает.
-    '3. Время — в минутах: «1,5 ч» → 90, «1:20» → 80, «40 мин» → 40.',
-    '4. Таблица по дням и занятиям: одна запись на непустую ячейку — день, занятие, минуты. Строки ' +
-      'и столбцы итогов, проценты и суммы за месяц не переноси: приложение посчитает их само.',
-    '5. Разделы, для которых данных нет, не пиши.',
-    '6. Ответь одним блоком JSON. Если записей очень много — раздели на несколько блоков, каждый — ' +
-      'полный файл в том же формате.',
-    '7. После JSON отдельным списком перечисли, что не удалось разобрать или в чём сомневаешься.',
-    '',
-    'Разделы:',
-    '',
-    sections.join('\n\n'),
-    '',
-    'Пример файла:',
-    '',
-    JSON.stringify(example, null, 2),
-    '',
-    'Мои данные:',
-    '',
-  ].join('\n')
+  /**
+   * Промпт для ИИ (Р-60 «Дневников»). Собирается из тех же описаний разделов, по которым
+   * идёт проверка, — разойтись они не могут. Сегодняшняя дата внутри: без
+   * неё «вчера» и год без числа не перевести.
+   */
+  function buildPrompt(specs: readonly ImportSpec[], day: DateStr): string {
+    const example: Record<string, unknown> = { format: config.importFormat, version: IMPORT_VERSION }
+    for (const spec of specs) example[spec.section] = spec.example
+
+    const sections = specs.map((spec) =>
+      [`"${spec.section}" — ${spec.about}`, ...spec.fields.map((field) => `  - ${field}`)].join('\n'),
+    )
+
+    const rules = [...config.promptRules, ...COMMON_PROMPT_RULES].map((rule, index) => `${index + 1}. ${rule}`)
+
+    return [
+      `Помоги перенести мои записи в приложение «${config.name}». Ниже — описание формата, а в конце — ` +
+        `мои данные: ${config.about.sources}. Собери из них один JSON строго в этом формате.`,
+      '',
+      `Сегодня ${formatDate(day)}. От этой даты считай «вчера», «прошлой весной» и год там, где он не указан.`,
+      '',
+      'Правила:',
+      ...rules,
+      '',
+      'Разделы:',
+      '',
+      sections.join('\n\n'),
+      '',
+      'Пример файла:',
+      '',
+      JSON.stringify(example, null, 2),
+      '',
+      'Мои данные:',
+      '',
+    ].join('\n')
+  }
+
+  return {
+    /** Строка `format` файла импорта приложения. */
+    format: config.importFormat,
+    readImportFile,
+    buildPrompt,
+  }
 }
+
+/** Импорт приложения. */
+export type Importing = ReturnType<typeof createImporting>
+

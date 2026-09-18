@@ -2,7 +2,7 @@
  * Лента: строка ленты и общие операции над ней (Р-48 «Дневников»).
  *
  * Лента — единственное место, где записи разных модулей встречаются.
- * Ядро про модули при этом не знает: вид записи — `RecordKind` из модели,
+ * Ядро про модули при этом не знает: вид записи — строка приложения (`RecordKind` его модели),
  * а переводят свои записи в строки ленты сами модули, каждый в своём
  * `modules/<имя>/feed.ts`; обзор недели — `screens/reviewFeed.ts` (Р-60 «Делу Время»).
  * Сводит их вместе таблица `src/registry.ts`.
@@ -16,10 +16,9 @@
  */
 
 import { formatDate, formatDateLong, formatMonth, isDateOrMonth, isDateStr, isMonthStr, plural } from './dates.ts'
-import type { RecordKind } from './model.ts'
 
-export type FeedItem = {
-  kind: RecordKind
+export type FeedItem<K extends string = string> = {
+  kind: K
   /** id записи. Ключ в списке — вид вместе с id: хранилища разные. */
   id: string
   /**
@@ -54,7 +53,7 @@ export function readableDate(item: FeedItem): string | null {
  * Внутри одной даты — по виду в порядке реестра, затем по названию: порядок
  * хранилища не значит ничего.
  */
-export function compareFeed(a: FeedItem, b: FeedItem, order: readonly RecordKind[] = []): number {
+export function compareFeed(a: FeedItem, b: FeedItem, order: readonly string[] = []): number {
   const first = readableDate(a)
   const second = readableDate(b)
   if (first !== second) {
@@ -74,7 +73,7 @@ export type FeedGroup = {
 }
 
 /** Разбивка по месяцам. На входе порядок любой; `order` — порядок видов внутри дня. */
-export function groupFeed(items: readonly FeedItem[], order: readonly RecordKind[] = []): FeedGroup[] {
+export function groupFeed(items: readonly FeedItem[], order: readonly string[] = []): FeedGroup[] {
   const groups: FeedGroup[] = []
   for (const item of [...items].sort((a, b) => compareFeed(a, b, order))) {
     const date = readableDate(item)
@@ -110,7 +109,7 @@ export function dateWords(date: string | null): string {
 
 export type FeedFilter = {
   /** Вид записи. null — все. */
-  kind?: RecordKind | null
+  kind?: string | null
   query?: string
 }
 

@@ -1,23 +1,22 @@
 /**
- * Модель данных.
+ * Договор семьи и шов ядра с приложением.
  *
- * Источник истины — docs/02-Архитектура.md, раздел «Модель данных».
- * Имена полей и опциональность взяты оттуда дословно. Если модель меняется,
- * сначала правится документ, потом этот файл, а не наоборот.
+ * Источник истины — docs/02-Архитектура.md, разделы «Договор семьи» и «Шов:
+ * конфиг и фабрики». Правка `Base`, `Migration` или раскладки — правка
+ * договора, то есть решение Я-NN и релиз на все приложения сразу
+ * (Р-51 «Трапезы»).
  *
- * Каркас файла — версия схемы, хранилища, миграции — взят из «Дневников»
- * (Р-11 «Делу Время»); типы записей — этого проекта.
+ * Типы записей, версия схемы, хранилища и миграции — приложения, в его
+ * `src/app/model.ts` и `src/app/config.ts` (Р-47 «Трапезы»). Ядро получает их
+ * одним объектом `AppConfig` и не знает, что такое заметка или блюдо.
+ *
+ * Каркас файла — версия схемы, хранилища, миграции — взят из «Делу Время»
+ * с d86f0aa, у них — из «Дневников» (Р-11 «Делу Время»).
  */
-
-/**
- * Версия схемы. Растёт с каждым шагом в `migrations` — и с добавлением
- * хранилища тоже: IndexedDB заводит хранилище только при смене версии.
- */
-export const SCHEMA_VERSION = 1
 
 // ─── Общая часть ───────────────────────────────────────────────────────────
 
-/** Та же `Base`, что в «Дневниках»: ленты приложений семьи сливаются без переделок. */
+/** Общая часть каждой записи семьи: ленты приложений сливаются без переделок. */
 export type Base = {
   /** ULID, генерируется локально, сортируется по времени */
   id: string
@@ -27,131 +26,25 @@ export type Base = {
   deleted?: boolean
 }
 
-// ─── Справочники ───────────────────────────────────────────────────────────
-
-/** Категория учёта времени: Зарядка, Шахматы, Чтение, Ютуб, Прогулка, Прочее… */
-export type Category = Base & {
-  name: string
-  /** порядок на экране дня и в сводках */
-  order: number
-  /** признак для обзора недели, не для дневного экрана (Р-05 «Делу Время») */
-  kind: 'useful' | 'neutral' | 'idle'
-  archived?: boolean
-  /** группа: кнопки и строки итогов по группам (Р-81 «Делу Время») */
-  group?: string
-  /** у надгробия: куда перенесены её блоки (Р-22 «Делу Время», Р-29 «Делу Время») */
-  movedTo?: string
-  /** норма недели (Р-45 «Делу Время»); все правила необязательны */
-  norm?: {
-    /** дней с блоком — не меньше */
-    minDays?: number
-    /** минут — не меньше */
-    minMinutes?: number
-    /** минут — не больше */
-    maxMinutes?: number
-    /** YYYY-MM-DD, с какого дня считается история (Р-53 «Делу Время», Р-56 «Делу Время») */
-    since?: string
-  }
-}
-
-/** Пресет — кнопка «Чтение +30». Заводится с экрана категории. */
-export type Preset = Base & {
-  categoryId: string
-  minutes: number
-  order: number
-}
-
-/** Шаблон дня: «рабочий», «выходной». Порождает записи плана на конкретный день. */
-export type DayTemplate = Base & {
-  name: string
-  items: { title: string; estMin?: number; main?: boolean }[]
-  order: number
-}
-
-// ─── Записи ────────────────────────────────────────────────────────────────
-
-/** Одна сущность на входящее, дело, наблюдение, замысел и пункт плана дня (Р-12 «Делу Время», Р-31 «Делу Время»). */
-export type Note = Base & {
-  text: string
-  /** Не выбран при захвате — 'task' (Р-13 «Делу Время»). */
-  kind: NoteKind
-  /** YYYY-MM-DD, когда записана; null → дата неизвестна (Р-08 «Делу Время») */
-  capturedOn: string | null
-  /** YYYY-MM-DD, на какой день поставлена; null → лежит во входящих */
-  plannedFor: string | null
-  /** главное дело того дня, на который поставлена */
-  main?: boolean
-  /** место пункта в своём дне; нет — после упорядоченных, по id (Р-75 «Делу Время») */
-  order?: number
-  /** оценка длительности, для реализма плана */
-  estMin?: number
-  status: NoteStatus
-  /** YYYY-MM-DD, когда выполнено */
-  doneOn?: string
-  /** Связи с другими записями: `note:<id>` — замысел, к которому относится дело (Р-31 «Делу Время»). */
-  refs?: string[]
-}
-
-/** Дело, мысль (она же наблюдение), замысел (Р-31 «Делу Время»). */
-export type NoteKind = 'task' | 'thought' | 'goal'
-export type NoteStatus = 'open' | 'done' | 'someday' | 'dropped'
-
-/** Блок учтённого времени. */
-export type TimeBlock = Base & {
-  /** YYYY-MM-DD, дата события, не дата ввода */
-  date: string
-  categoryId: string
-  minutes: number
-  /** фоновая активность: покер под ютуб */
-  bgCategoryId?: string
-  note?: string
-  refs?: string[]
-}
-
-/** Проведённый обзор недели. */
-export type Review = Base & {
-  /** YYYY-MM-DD, понедельник недели */
-  weekStart: string
-  /** ISO 8601, когда обзор провели */
-  doneAt: string
-  note?: string
-  refs?: string[]
-}
-
-/** Вид записи. Три значения — ровно то, что описано выше. */
-export type RecordKind = 'note' | 'time' | 'review'
-
-// ─── Хранилища ─────────────────────────────────────────────────────────────
-
 /**
- * Хранилища, которые уезжают в синхронизацию. Имена совпадают с раскладкой
- * в репозитории данных (02-Архитектура, «Локальное хранилище»).
- * Порядок значения не имеет, но менять имена нельзя — они в базе на устройстве.
+ * Таблица приложения: имя синхронизируемого хранилища → тип записи в нём.
+ * У «Трапезы» — `{ categories: Category; dishes: Dish; …; intake: Intake }`.
  */
-export const SYNCED_STORES = ['categories', 'presets', 'templates', 'notes', 'time', 'reviews'] as const
+export type StoreMap = { [store: string]: Base }
+
+/** Имя синхронизируемого хранилища приложения. */
+export type StoreOf<R extends StoreMap> = keyof R & string
+
+/** Любая синхронизируемая запись приложения. */
+export type RecordOf<R extends StoreMap> = R[StoreOf<R>]
 
 /**
- * Локальные хранилища. Не синхронизируются никогда:
- * settings держит токен доступа, и ему в общем репозитории не место.
+ * Локальные хранилища. Не синхронизируются никогда: settings держит токен
+ * доступа, и ему в общем репозитории не место. Одинаковы у всей семьи.
  */
 export const LOCAL_STORES = ['meta', 'settings', 'dirty'] as const
 
-export type SyncedStore = (typeof SYNCED_STORES)[number]
 export type LocalStore = (typeof LOCAL_STORES)[number]
-export type StoreName = SyncedStore | LocalStore
-
-/** Что лежит в каком хранилище. Позволяет db.get('notes') возвращать Note. */
-export type StoreRecord = {
-  categories: Category
-  presets: Preset
-  templates: DayTemplate
-  notes: Note
-  time: TimeBlock
-  reviews: Review
-}
-
-/** Любая синхронизируемая запись. */
-export type AnyRecord = StoreRecord[SyncedStore]
 
 // ─── Миграции ──────────────────────────────────────────────────────────────
 
@@ -167,7 +60,7 @@ export type AnyRecord = StoreRecord[SyncedStore]
  * закрывается на первом же await.
  *
  * Шаг сам создаёт своё хранилище и его индексы: раскладка версии 1
- * (`V1_STORES` в db.ts) после первого релиза заморожена.
+ * (`v1Stores` конфига) после первого релиза заморожена.
  */
 export type Migration = {
   to: number
@@ -189,4 +82,108 @@ export type Migration = {
   run: (db: IDBDatabase, tx: IDBTransaction) => void
 }
 
-export const migrations: Migration[] = []
+// ─── Раскладка ─────────────────────────────────────────────────────────────
+
+/** Где лежит хранилище в репозитории данных: одним файлом или по месяцам. */
+export type Place<T> =
+  | { split: 'none'; path: string }
+  | {
+      split: 'month'
+      dir: string
+      /** Дата, по которой запись попадает в месяц. null — даты нет (Р-34 «Дневников»). */
+      dateOf: (record: T) => string | null
+    }
+
+// ─── Конфиг приложения ─────────────────────────────────────────────────────
+
+/**
+ * Всё, чем приложения семьи отличаются для ядра (Р-47 «Трапезы»). Один объект
+ * в `src/app/config.ts` приложения; фабрики ядра берут его аргументом.
+ *
+ * Поле сверх Р-47 появляется только с причиной в 02-Архитектуре и обязано
+ * иметь смысл для любого приложения семьи.
+ */
+export type AppConfig<R extends StoreMap> = {
+  /** «Трапеза»: сообщения коммитов, тексты ошибок, README данных, промпт. */
+  name: string
+  /**
+   * Имя базы IndexedDB. Не меняется никогда: все приложения семьи живут на
+   * одном origin, и IndexedDB различается только именем.
+   */
+  dbName: string
+  /** Версия схемы. Растёт с каждым шагом миграции, ядро номера не диктует. */
+  schemaVersion: number
+  migrations: readonly Migration[]
+  /**
+   * Синхронизируемые хранилища — все ключи `R`, в порядке, в котором их
+   * пишут импорт и слепок. Имена лежат в базе на устройствах и не меняются.
+   */
+  stores: readonly StoreOf<R>[]
+  /** Раскладка версии 1 — заморожена после первого релиза. */
+  v1Stores: readonly StoreOf<R>[]
+  /** Индексы сверх `updatedAt`, который заводится на каждом хранилище. */
+  indexes: { readonly [S in StoreOf<R>]: readonly string[] }
+  /** Раскладка записей по файлам репозитория данных. */
+  places: { readonly [S in StoreOf<R>]: Place<R[S]> }
+  /** Что лежит в файлах хранилища — строка таблицы README данных. */
+  storeNotes: { readonly [S in StoreOf<R>]: string }
+  /** Строка `format` файла импорта: `trapeza-import`. */
+  importFormat: string
+  /**
+   * Свои правила промпта импорта — первыми, до общих. Про даты, минуты,
+   * оценку калорийности: то, что у приложений разное.
+   */
+  promptRules: readonly string[]
+  /**
+   * Предмет приложения словами — для README данных и промпта импорта.
+   * Сверх Р-47 «Трапезы»: у «Делу Время» и «Трапезы» ровно эти строки и
+   * различались (02-Архитектура, «Шов: конфиг и фабрики»).
+   */
+  about: {
+    /** Что за данные: «учёт еды: что съедено, в каком приёме, блюда и нормы недели». */
+    data: string
+    /** Почему репозиторий данных приватный: «внутри то, что и когда вы ели, и заметки к этому». */
+    privacy: string
+    /** Откуда данные для импорта: «таблицы учёта еды, списки блюд или скриншоты из других сервисов». */
+    sources: string
+  }
+}
+
+/**
+ * Проверка конфига на старте. Типы держат ключи таблиц, но не держат, что
+ * `stores` перечисляет их все и без повторов, — а ошибка здесь тихо потеряла
+ * бы хранилище при синхронизации.
+ */
+export function checkConfig<R extends StoreMap>(config: AppConfig<R>): void {
+  const stores = new Set<string>(config.stores)
+  const problems: string[] = []
+
+  if (stores.size !== config.stores.length) problems.push('в stores есть повтор')
+  for (const store of Object.keys(config.places)) {
+    if (!stores.has(store)) problems.push(`хранилище «${store}» есть в places, но нет в stores`)
+  }
+  for (const store of config.stores) {
+    if (!(store in config.places)) problems.push(`у «${store}» нет места в places`)
+    if (!(store in config.indexes)) problems.push(`у «${store}» нет строки в indexes`)
+    if (!(store in config.storeNotes)) problems.push(`у «${store}» нет строки в storeNotes`)
+    if ((LOCAL_STORES as readonly string[]).includes(store)) {
+      problems.push(`«${store}» — имя локального хранилища ядра`)
+    }
+  }
+  for (const store of config.v1Stores) {
+    if (!stores.has(store)) problems.push(`«${store}» из v1Stores нет в stores`)
+  }
+  if (!Number.isInteger(config.schemaVersion) || config.schemaVersion < 1) {
+    problems.push(`schemaVersion ${config.schemaVersion} — не целое от 1`)
+  }
+  for (const step of config.migrations) {
+    if (step.to < 2 || step.to > config.schemaVersion) {
+      problems.push(`миграция на ${step.to} вне версий 2…${config.schemaVersion}`)
+    }
+  }
+  if (!config.dbName) problems.push('dbName пустой')
+
+  if (problems.length > 0) {
+    throw new Error(`Конфиг приложения «${config.name}» не сходится: ${problems.join('; ')}`)
+  }
+}
