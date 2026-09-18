@@ -16,18 +16,27 @@ describe('приветствие', () => {
 })
 
 describe('пустая база', () => {
+  // Хранилища, где лежат записи человека, — у приложения: у «Делу Время»
+  // справочники не в счёт, они заводятся сами. Здесь — как у неё.
+  const own = ['notes', 'time', 'reviews']
+
   it('ничего не посчитано — пусто', () => {
-    expect(isEmptyBase({})).toBe(true)
+    expect(isEmptyBase({}, own)).toBe(true)
   })
 
-  it('справочники не в счёт: категории заводятся сами', () => {
-    expect(isEmptyBase({ categories: 8, presets: 3, templates: 2 })).toBe(true)
+  it('справочники не в счёт, если приложение их не назвало', () => {
+    expect(isEmptyBase({ categories: 8, presets: 3, templates: 2 }, own)).toBe(true)
   })
 
   it('любая запись человека — уже не пусто', () => {
-    expect(isEmptyBase({ notes: 1 })).toBe(false)
-    expect(isEmptyBase({ time: 1 })).toBe(false)
-    expect(isEmptyBase({ reviews: 1 })).toBe(false)
+    expect(isEmptyBase({ notes: 1 }, own)).toBe(false)
+    expect(isEmptyBase({ time: 1 }, own)).toBe(false)
+    expect(isEmptyBase({ reviews: 1 }, own)).toBe(false)
+  })
+
+  it('приложение, у которого в счёт все хранилища, — и справочник тоже', () => {
+    // «Трапеза»: стартовых блюд в коде нет, импорт блюд — уже данные (Р-15 «Трапезы»).
+    expect(isEmptyBase({ dishes: 3 }, ['categories', 'dishes', 'intake'])).toBe(false)
   })
 })
 

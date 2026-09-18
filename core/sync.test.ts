@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { GitHubError, blobSha } from './github.ts'
 import type { Client, FileToWrite } from './github.ts'
-import { buildFiles, canonical, readmeFile } from './layout.ts'
-import { SCHEMA_VERSION, SYNCED_STORES } from './model.ts'
-import type { StoreRecord, SyncedStore } from './model.ts'
-import { expiryDay, planDownload, planUpload, runSync } from './sync.ts'
+import { shelf, type ShelfStores } from '../testing/shelf.ts'
+import { createDb, type StoreData } from './db.ts'
+import { canonical, createLayout } from './layout.ts'
+import type { StoreOf } from './model.ts'
+import { createSync, expiryDay, planUpload } from './sync.ts'
 import type { Ports, ShaByPath } from './sync.ts'
+
+// Подставная «Полка» (`testing/shelf.ts`) вместо настоящего приложения
+// (Р-47 «Трапезы»). База здесь не открывается: проход ходит в неё через
+// порты, а от `db` ему нужна только проверка версии схемы.
+const { planDownload, runSync } = createSync(shelf, createDb(shelf))
+const { buildFiles, readmeFile } = createLayout(shelf)
+const SCHEMA_VERSION = shelf.schemaVersion
+const SYNCED_STORES = shelf.stores
+type SyncedStore = StoreOf<ShelfStores>
 
 // ─── Подставной GitHub ─────────────────────────────────────────────────────
 
@@ -131,7 +141,7 @@ function fakeDb(seed: Partial<{ [S in SyncedStore]: Record_[] }> = {}) {
     for (const record of data[store]) dirty.push({ store, id: record.id, at: record.updatedAt })
   }
 
-  const ports: Ports = {
+  const ports: Ports<ShelfStores> = {
     readAll: () => Promise.resolve(data as never),
 
     /** Правило Р-07 «Дневников»: по `id` побеждает поздний `updatedAt`. */
@@ -171,16 +181,16 @@ function fakeDb(seed: Partial<{ [S in SyncedStore]: Record_[] }> = {}) {
 }
 
 function item(id: string, updatedAt: string, over: Partial<Record_> = {}): Record_ {
-  return { id, updatedAt, name: `Категория ${id}`, order: 0, kind: 'neutral', ...over }
+  return { id, updatedAt, name: `Полка ${id}`, order: 0, ...over }
 }
 
 function mark(id: string, date: string, updatedAt: string): Record_ {
-  return { id, updatedAt, categoryId: 'c1', minutes: 30, date }
+  return { id, updatedAt, bookId: 'b1', minutes: 30, date }
 }
 
 /** Репозиторий, каким его оставила бы синхронизация с такими данными. */
 function repoWith(seed: Partial<{ [S in SyncedStore]: Record_[] }>): Record<string, string> {
-  const data = {} as { [S in SyncedStore]: StoreRecord[S][] }
+  const data = {} as StoreData<ShelfStores>
   for (const store of SYNCED_STORES) {
     Object.assign(data, { [store]: (seed[store] ?? []) as never })
   }
@@ -194,16 +204,16 @@ function repoWith(seed: Partial<{ [S in SyncedStore]: Record_[] }>): Record<stri
 describe('planDownload', () => {
   it('скачивает только разошедшиеся файлы', () => {
     const plan = planDownload(
-      { 'categories.json': 'a', 'presets.json': 'b' },
-      { 'categories.json': 'a', 'presets.json': 'старый' },
+      { 'shelves.json': 'a', 'quotes.json': 'b' },
+      { 'shelves.json': 'a', 'quotes.json': 'старый' },
     )
-    expect(plan.download).toEqual(['presets.json'])
+    expect(plan.download).toEqual(['quotes.json'])
   })
 
   it('незнакомый файл не скачивает и не считает своим', () => {
-    const plan = planDownload({ 'README.md': 'x', 'categories.json': 'a' }, {})
-    expect(plan.download).toEqual(['categories.json'])
-    expect(plan.merged).toEqual(['categories.json'])
+    const plan = planDownload({ 'README.md': 'x', 'shelves.json': 'a' }, {})
+    expect(plan.download).toEqual(['shelves.json'])
+    expect(plan.merged).toEqual(['shelves.json'])
   })
 
   it('meta.json скачивается, но своим хранилищем не считается', () => {
@@ -218,14 +228,14 @@ describe('planUpload', () => {
     const same = canonical([])
     const plan = await planUpload(
       [
-        { path: 'categories.json', content: same },
-        { path: 'presets.json', content: '[{"id":"a"}]\n' },
+        { path: 'shelves.json', content: same },
+        { path: 'quotes.json', content: '[{"id":"a"}]\n' },
       ],
-      { 'categories.json': await blobSha(same), 'presets.json': 'другое' },
+      { 'shelves.json': await blobSha(same), 'quotes.json': 'другое' },
     )
-    expect(plan.files.map((file) => file.path)).toEqual(['presets.json'])
+    expect(plan.files.map((file) => file.path)).toEqual(['quotes.json'])
     // Отпечатки считаются для всех, включая неотправленные: их запоминаем.
-    expect(Object.keys(plan.shas)).toEqual(['categories.json', 'presets.json'])
+    expect(Object.keys(plan.shas)).toEqual(['shelves.json', 'quotes.json'])
   })
 })
 
@@ -234,7 +244,7 @@ describe('planUpload', () => {
 describe('первый запуск', () => {
   it('в пустом репозитории создаёт ветку и кладёт всё', async () => {
     const repo = fakeRepo()
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
 
     const result = await runSync(repo.api, local.ports)
 
@@ -243,8 +253,8 @@ describe('первый запуск', () => {
     // Два коммита, и только здесь: первый заводит репозиторий, второй кладёт
     // данные. Дальше «одна синхронизация — один коммит» держится.
     expect(repo.head()).toBe('commit2')
-    expect(Object.keys(repo.files())).toContain('categories.json')
-    expect(JSON.parse(repo.files()['categories.json'] ?? '[]')[0].id).toBe('i1')
+    expect(Object.keys(repo.files())).toContain('shelves.json')
+    expect(JSON.parse(repo.files()['shelves.json'] ?? '[]')[0].id).toBe('i1')
     expect(JSON.parse(repo.files()['meta.json'] ?? '{}').schemaVersion).toBe(SCHEMA_VERSION)
   })
 
@@ -252,19 +262,19 @@ describe('первый запуск', () => {
     // Git Data API на репозитории без единого коммита отвечает 409 на всё,
     // включая создание дерева. Первый файл кладётся другим путём.
     const repo = fakeRepo()
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
 
     await runSync(repo.api, local.ports)
 
     expect(repo.calls.indexOf('createFirst')).toBeLessThan(repo.calls.indexOf('commit'))
-    expect(repo.messages()[0]).toBe('Делу Время: заведение репозитория данных')
+    expect(repo.messages()[0]).toBe('Полка: заведение репозитория данных')
     expect(JSON.parse(repo.files()['meta.json'] ?? '{}').schemaVersion).toBe(SCHEMA_VERSION)
-    expect(JSON.parse(repo.files()['categories.json'] ?? '[]')[0].id).toBe('i1')
+    expect(JSON.parse(repo.files()['shelves.json'] ?? '[]')[0].id).toBe('i1')
   })
 
   it('заведение не повторяется на непустом репозитории', async () => {
-    const repo = fakeRepo(repoWith({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] }))
-    const local = fakeDb({ categories: [item('i2', '2026-09-02T10:00:00.000Z')] })
+    const repo = fakeRepo(repoWith({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }))
+    const local = fakeDb({ shelves: [item('i2', '2026-09-02T10:00:00.000Z')] })
 
     await runSync(repo.api, local.ports)
     expect(repo.calls).not.toContain('createFirst')
@@ -272,15 +282,15 @@ describe('первый запуск', () => {
 
   it('снимает пометки об отправке', async () => {
     const repo = fakeRepo()
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
     await runSync(repo.api, local.ports)
-    expect(local.cleared).toEqual([{ store: 'categories', id: 'i1' }])
+    expect(local.cleared).toEqual([{ store: 'shelves', id: 'i1' }])
   })
 })
 
 describe('тихий проход', () => {
   it('когда ничего не менялось — ни коммита, ни скачиваний', async () => {
-    const seed = { categories: [item('i1', '2026-09-01T10:00:00.000Z')] }
+    const seed = { shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }
     const repo = fakeRepo(repoWith(seed))
     const local = fakeDb(seed)
 
@@ -297,72 +307,72 @@ describe('тихий проход', () => {
 
 describe('чужие записи', () => {
   it('прилетают в базу', async () => {
-    const repo = fakeRepo(repoWith({ categories: [item('i2', '2026-09-02T10:00:00.000Z')] }))
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const repo = fakeRepo(repoWith({ shelves: [item('i2', '2026-09-02T10:00:00.000Z')] }))
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
 
     const result = await runSync(repo.api, local.ports)
 
     expect(result.pulled).toBe(1)
-    expect(local.data.categories.map((record) => record.id).sort()).toEqual(['i1', 'i2'])
+    expect(local.data.shelves.map((record) => record.id).sort()).toEqual(['i1', 'i2'])
     // И тут же уезжают обратно вместе с нашей — в файле теперь обе.
-    expect(JSON.parse(repo.files()['categories.json'] ?? '[]')).toHaveLength(2)
+    expect(JSON.parse(repo.files()['shelves.json'] ?? '[]')).toHaveLength(2)
   })
 
   it('поздняя правка побеждает раннюю, чья бы ни была', async () => {
     const repo = fakeRepo(
-      repoWith({ categories: [item('i1', '2026-09-05T10:00:00.000Z', { name: 'С сервера' })] }),
+      repoWith({ shelves: [item('i1', '2026-09-05T10:00:00.000Z', { name: 'С сервера' })] }),
     )
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z', { name: 'Местная' })] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z', { name: 'Местная' })] })
 
     await runSync(repo.api, local.ports)
-    expect(local.data.categories[0]?.name).toBe('С сервера')
+    expect(local.data.shelves[0]?.name).toBe('С сервера')
   })
 
   it('местная правка новее — уезжает на сервер', async () => {
     const repo = fakeRepo(
-      repoWith({ categories: [item('i1', '2026-09-01T10:00:00.000Z', { name: 'С сервера' })] }),
+      repoWith({ shelves: [item('i1', '2026-09-01T10:00:00.000Z', { name: 'С сервера' })] }),
     )
-    const local = fakeDb({ categories: [item('i1', '2026-09-05T10:00:00.000Z', { name: 'Местная' })] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-05T10:00:00.000Z', { name: 'Местная' })] })
 
     await runSync(repo.api, local.ports)
-    expect(local.data.categories[0]?.name).toBe('Местная')
-    expect(JSON.parse(repo.files()['categories.json'] ?? '[]')[0].name).toBe('Местная')
+    expect(local.data.shelves[0]?.name).toBe('Местная')
+    expect(JSON.parse(repo.files()['shelves.json'] ?? '[]')[0].name).toBe('Местная')
   })
 
   it('надгробия уезжают, иначе второе устройство воскресит удалённое', async () => {
     const repo = fakeRepo()
     const local = fakeDb({
-      categories: [item('i1', '2026-09-01T10:00:00.000Z', { deleted: true })],
+      shelves: [item('i1', '2026-09-01T10:00:00.000Z', { deleted: true })],
     })
     await runSync(repo.api, local.ports)
-    expect(JSON.parse(repo.files()['categories.json'] ?? '[]')[0].deleted).toBe(true)
+    expect(JSON.parse(repo.files()['shelves.json'] ?? '[]')[0].deleted).toBe(true)
   })
 })
 
 describe('гонка двух устройств', () => {
   it('ветка ушла вперёд — перечитываем и сливаемся заново', async () => {
-    const repo = fakeRepo(repoWith({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] }))
-    const local = fakeDb({ categories: [item('i2', '2026-09-02T10:00:00.000Z')] })
+    const repo = fakeRepo(repoWith({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }))
+    const local = fakeDb({ shelves: [item('i2', '2026-09-02T10:00:00.000Z')] })
 
     // Пока мы собирали коммит, второе устройство отправило свою позицию.
     repo.raceNextPush(
       repoWith({
-        categories: [item('i1', '2026-09-01T10:00:00.000Z'), item('i3', '2026-09-03T10:00:00.000Z')],
+        shelves: [item('i1', '2026-09-01T10:00:00.000Z'), item('i3', '2026-09-03T10:00:00.000Z')],
       }),
     )
 
     const result = await runSync(repo.api, local.ports, { pause: () => Promise.resolve() })
 
     // Ни одна из трёх записей не потерялась.
-    expect(JSON.parse(repo.files()['categories.json'] ?? '[]').map((r: Record_) => r.id).sort())
+    expect(JSON.parse(repo.files()['shelves.json'] ?? '[]').map((r: Record_) => r.id).sort())
       .toEqual(['i1', 'i2', 'i3'])
-    expect(local.data.categories.map((r) => r.id).sort()).toEqual(['i1', 'i2', 'i3'])
+    expect(local.data.shelves.map((r) => r.id).sort()).toEqual(['i1', 'i2', 'i3'])
     expect(result.pushed).toBeGreaterThan(0)
   })
 
   it('проиграв трижды, откладывает, а не давит силой; между попытками пауза — Р-62 «Дневников»', async () => {
-    const repo = fakeRepo(repoWith({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] }))
-    const local = fakeDb({ categories: [item('i2', '2026-09-02T10:00:00.000Z')] })
+    const repo = fakeRepo(repoWith({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }))
+    const local = fakeDb({ shelves: [item('i2', '2026-09-02T10:00:00.000Z')] })
 
     repo.raceNextPush({})
     const first = repo.api.moveBranch
@@ -386,12 +396,12 @@ describe('гонка двух устройств', () => {
 
 describe('порядок «сначала чужое, потом своё»', () => {
   it('битый файл на сервере обрывает проход до отправки', async () => {
-    const repo = fakeRepo({ ...repoWith({}), 'categories.json': 'не json' })
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const repo = fakeRepo({ ...repoWith({}), 'shelves.json': 'не json' })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
 
     await expect(runSync(repo.api, local.ports)).rejects.toThrow('не JSON')
     expect(repo.calls).not.toContain('commit')
-    expect(repo.files()['categories.json']).toBe('не json')
+    expect(repo.files()['shelves.json']).toBe('не json')
   })
 
   it('репозиторий более новой схемы не трогается вовсе', async () => {
@@ -399,15 +409,15 @@ describe('порядок «сначала чужое, потом своё»', ()
       ...repoWith({}),
       'meta.json': `${JSON.stringify({ schemaVersion: SCHEMA_VERSION + 1 }, null, 2)}\n`,
     })
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
 
     await expect(runSync(repo.api, local.ports)).rejects.toThrow('Обнови приложение')
     expect(repo.calls).not.toContain('commit')
   })
 
   it('пометки не снимаются, если проход не дошёл до конца', async () => {
-    const repo = fakeRepo({ ...repoWith({}), 'categories.json': 'не json' })
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const repo = fakeRepo({ ...repoWith({}), 'shelves.json': 'не json' })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
 
     await runSync(repo.api, local.ports).catch(() => undefined)
     expect(local.cleared).toEqual([])
@@ -416,51 +426,51 @@ describe('порядок «сначала чужое, потом своё»', ()
 
 describe('переезд записи между месяцами', () => {
   it('старый файл перезаписывается пустым, копии не остаётся', async () => {
-    const seed = { time: [mark('e1', '2026-01-31', '2026-02-01T10:00:00.000Z')] }
+    const seed = { sessions: [mark('e1', '2026-01-31', '2026-02-01T10:00:00.000Z')] }
     const repo = fakeRepo(repoWith(seed))
     const local = fakeDb(seed)
     await runSync(repo.api, local.ports)
 
-    // Дату поправили: блок был не 31 января, а 1 февраля.
-    local.data.time[0] = mark('e1', '2026-02-01', '2026-02-02T10:00:00.000Z')
+    // Дату поправили: сеанс был не 31 января, а 1 февраля.
+    local.data.sessions[0] = mark('e1', '2026-02-01', '2026-02-02T10:00:00.000Z')
     await runSync(repo.api, local.ports)
 
-    expect(JSON.parse(repo.files()['time/2026-01.json'] ?? 'null')).toEqual([])
-    expect(JSON.parse(repo.files()['time/2026-02.json'] ?? '[]')).toHaveLength(1)
+    expect(JSON.parse(repo.files()['sessions/2026-01.json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(repo.files()['sessions/2026-02.json'] ?? '[]')).toHaveLength(1)
   })
 })
 
 describe('чужое в репозитории', () => {
   it('README и прочее руками положенное не трогается', async () => {
-    const repo = fakeRepo({ ...repoWith({}), 'README.md': '# Данные «Делу Время»\n' })
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const repo = fakeRepo({ ...repoWith({}), 'README.md': '# Мои записи о книгах\n' })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
 
     await runSync(repo.api, local.ports)
-    expect(repo.files()['README.md']).toBe('# Данные «Делу Время»\n')
+    expect(repo.files()['README.md']).toBe('# Мои записи о книгах\n')
   })
 })
 
 describe('сообщение коммита', () => {
   it('называет файл, когда он один, и считает, когда их много', async () => {
-    const seed = { categories: [item('i1', '2026-09-01T10:00:00.000Z')] }
+    const seed = { shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }
     const repo = fakeRepo(repoWith(seed))
     const local = fakeDb(seed)
     await runSync(repo.api, local.ports)
 
     // Поменялась одна позиция — в коммите один файл, и он назван.
-    local.data.categories[0] = item('i1', '2026-09-02T10:00:00.000Z', { name: 'Другое' })
+    local.data.shelves[0] = item('i1', '2026-09-02T10:00:00.000Z', { name: 'Другое' })
     await runSync(repo.api, local.ports)
-    expect(repo.messages().at(-1)).toBe('Делу Время: categories.json')
+    expect(repo.messages().at(-1)).toBe('Полка: shelves.json')
   })
 
   it('первый коммит перечисляет файлы в теле', async () => {
     const repo = fakeRepo()
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
     await runSync(repo.api, local.ports)
 
     const message = repo.messages().at(-1) ?? ''
-    expect(message).toMatch(/^Делу Время: обновлено файлов \d+/)
-    expect(message).toContain('categories.json')
+    expect(message).toMatch(/^Полка: обновлено файлов \d+/)
+    expect(message).toContain('shelves.json')
   })
 })
 
@@ -481,7 +491,7 @@ describe('срок жизни токена', () => {
 
 describe('README репозитория данных (Р-69 «Делу Время»)', () => {
   it('кладётся, если его нет, — и в заведённом репозитории тоже', async () => {
-    const seed = { categories: [item('i1', '2026-09-01T10:00:00.000Z')] }
+    const seed = { shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }
     const repo = fakeRepo(repoWith(seed))
     const local = fakeDb(seed)
 
@@ -496,7 +506,7 @@ describe('README репозитория данных (Р-69 «Делу Врем�
 
   it('удалённый человеком — кладётся снова', async () => {
     const repo = fakeRepo()
-    const local = fakeDb({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
     await runSync(repo.api, local.ports)
     delete repo.files()['README.md']
 

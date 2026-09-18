@@ -102,21 +102,21 @@ describe('отчёт', () => {
 
 describe('адрес issue — из адреса сайта', () => {
   it('сайт проекта → его репозиторий', () => {
-    const url = issueUrl({ hostname: 'goigolden88.github.io', pathname: '/DeluVremya/' }, ISSUE_TITLE, 'тело')
-    expect(url?.startsWith('https://github.com/goigolden88/DeluVremya/issues/new?')).toBe(true)
+    const url = issueUrl({ hostname: 'goigolden88.github.io', pathname: '/Polka/' }, ISSUE_TITLE, 'тело')
+    expect(url?.startsWith('https://github.com/goigolden88/Polka/issues/new?')).toBe(true)
   })
 
   it('заголовок и отчёт доезжают целиком — кириллица, переносы, звёздочки', () => {
     const body = reportText({ ...FACTS, errors: [error(1, 'Ошибка: «кавычки» & амперсанд')] })
-    const url = issueUrl({ hostname: 'goigolden88.github.io', pathname: '/DeluVremya/' }, ISSUE_TITLE, body)
+    const url = issueUrl({ hostname: 'goigolden88.github.io', pathname: '/Polka/' }, ISSUE_TITLE, body)
     const params = new URL(url ?? '').searchParams
     expect(params.get('title')).toBe(ISSUE_TITLE)
     expect(params.get('body')).toBe(body)
   })
 
   it('форк — в свой репозиторий', () => {
-    const url = issueUrl({ hostname: 'friend.github.io', pathname: '/DeluVremya/index.html' }, ISSUE_TITLE, '')
-    expect(url?.startsWith('https://github.com/friend/DeluVremya/issues/new?')).toBe(true)
+    const url = issueUrl({ hostname: 'friend.github.io', pathname: '/Polka/index.html' }, ISSUE_TITLE, '')
+    expect(url?.startsWith('https://github.com/friend/Polka/issues/new?')).toBe(true)
   })
 
   it('сайт пользователя в корне — репозиторий по адресу', () => {
@@ -129,7 +129,7 @@ describe('адрес issue — из адреса сайта', () => {
   })
 
   it('не GitHub Pages — адреса нет', () => {
-    expect(issueUrl({ hostname: 'localhost', pathname: '/DeluVremya/' }, ISSUE_TITLE, '')).toBeNull()
+    expect(issueUrl({ hostname: 'localhost', pathname: '/Polka/' }, ISSUE_TITLE, '')).toBeNull()
     expect(issueUrl({ hostname: 'diary.example.com', pathname: '/' }, ISSUE_TITLE, '')).toBeNull()
     expect(issueUrl({ hostname: 'github.io', pathname: '/x/' }, ISSUE_TITLE, '')).toBeNull()
   })

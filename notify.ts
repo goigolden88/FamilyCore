@@ -33,7 +33,7 @@ export const REMINDER_TAG = 'remind'
 /**
  * Дни громкого и тихого напоминания о незаполненном дне — первой темы
  * у каждого приложения семьи. Вторая тема заводит свои ключи
- * («Делу Время»: `reminderReviewDay`, `reminderReviewQuietDay`, их Р-51).
+ * («Делу Время»: `reminderReviewDay`, `reminderReviewQuietDay`, Р-51 «Делу Время»).
  */
 export const DAY_KEYS = { loud: 'reminderLastDay', quiet: 'reminderQuietDay' } as const
 /** Часы со звуком. */
@@ -67,7 +67,7 @@ export type Topic = {
 
 /** Что даёт приложение: свои темы на день и текст «напоминать не о чем». */
 export type ReminderRules = {
-  /** Темы на день `day` — по своим данным и своим правилам (у «Трапезы» — Р-30). */
+  /** Темы на день `day` — по своим данным и своим правилам (у «Трапезы» — Р-30 «Трапезы»). */
   topics: (day: string) => Promise<Topic[]>
   /** Уведомление «Проверить сейчас», когда напоминать не о чем: оно доказывает, что уведомления доходят. */
   idle: Notice

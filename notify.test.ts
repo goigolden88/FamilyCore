@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest'
+import type { KeyValue } from './core/db.ts'
 import {
   appendWake,
   combineResults,
+  createReminders,
+  DAY_KEYS,
   DEFAULT_WINDOW,
   inWindow,
   LOG_SIZE,
   parseWindow,
   planWake,
   REMINDER_TAG,
+  type Topic,
   type Wake,
 } from './notify.ts'
 
 // Правила — «Дневников», и тесты их же: механика перенесена без изменений.
+// Темы и тексты — приложения; здесь их подставляют выдуманные.
 
 describe('имя фоновой проверки — Р-24 «Делу Время»', () => {
   it('общее, не про день: после выпуска не меняется', () => {
@@ -116,5 +121,126 @@ describe('журнал пробуждений', () => {
       wake('2026-09-13T03:00:00.000Z'),
     )
     expect(log).toHaveLength(2)
+  })
+})
+
+// ─── Механика поверх правил приложения — Р-48 «Трапезы» ───────────────────
+
+/** Настройки устройства в памяти. */
+function memory(): KeyValue & { data: Map<string, unknown> } {
+  const data = new Map<string, unknown>()
+  return {
+    data,
+    get: <T>(key: string) => Promise.resolve(data.get(key) as T | undefined),
+    set: (key, value) => Promise.resolve(void data.set(key, value)),
+    remove: (key) => Promise.resolve(void data.delete(key)),
+    keys: () => Promise.resolve([...data.keys()]),
+  }
+}
+
+/** Регистрация работника: только показ уведомлений. */
+function registration() {
+  const shown: { title: string; options: NotificationOptions & { renotify?: boolean } }[] = []
+  const reg = {
+    scope: 'https://example.org/Polka/',
+    showNotification: (title: string, options: NotificationOptions) => {
+      shown.push({ title, options })
+      return Promise.resolve()
+    },
+  } as unknown as ServiceWorkerRegistration
+  return { reg, shown }
+}
+
+const IDLE = { title: 'Напоминать не о чем', body: 'Всё записано.', tag: 'day', target: '/' }
+
+function rules(topics: (day: string) => Topic[]) {
+  return { topics: (day: string) => Promise.resolve(topics(day)), idle: IDLE }
+}
+
+const dayTopic = (notice: Topic['notice']): Topic => ({
+  notice,
+  tag: 'day',
+  target: '/',
+  loudKey: DAY_KEYS.loud,
+  quietKey: DAY_KEYS.quiet,
+})
+
+describe('createReminders', () => {
+  const afternoon = new Date(2026, 8, 13, 14, 0)
+  const night = new Date(2026, 8, 13, 3, 0)
+
+  it('в окне показывает со звуком, помнит день и пишет пробуждение', async () => {
+    const settings = memory()
+    const { reg, shown } = registration()
+    const reminders = createReminders(settings, rules(() => [dayTopic({ title: 'День пуст', body: 'Запиши' })]))
+
+    expect(await reminders.remind(reg, { now: afternoon })).toBe('shown')
+    expect(shown).toHaveLength(1)
+    expect(shown[0]?.options.silent).toBe(false)
+    // Адрес целиком: у работника нет роутера.
+    expect(shown[0]?.options.data).toEqual({ url: 'https://example.org/Polka/#/' })
+    expect(settings.data.get(DAY_KEYS.loud)).toBe('2026-09-13')
+    expect(await reminders.readWakes()).toEqual([{ at: afternoon.toISOString(), result: 'shown' }])
+
+    // Второй раз за день — молчит.
+    expect(await reminders.remind(reg, { now: afternoon })).toBe('already')
+    expect(shown).toHaveLength(1)
+  })
+
+  it('ночью — тихо, и тихий день не закрывает громкий', async () => {
+    const settings = memory()
+    const { reg, shown } = registration()
+    const reminders = createReminders(settings, rules(() => [dayTopic({ title: 'День пуст', body: 'Запиши' })]))
+
+    expect(await reminders.remind(reg, { now: night })).toBe('quiet')
+    expect(shown[0]?.options.silent).toBe(true)
+    expect(await reminders.remind(reg, { now: afternoon })).toBe('shown')
+  })
+
+  it('темы приложения — со своими днями: громкое одной не глушит другую', async () => {
+    const settings = memory()
+    const { reg, shown } = registration()
+    const reminders = createReminders(
+      settings,
+      rules(() => [
+        dayTopic({ title: 'День пуст', body: 'Запиши' }),
+        { notice: { title: 'Обзор', body: 'Пора' }, tag: 'review', target: '/review', loudKey: 'rLoud', quietKey: 'rQuiet' },
+      ]),
+    )
+    settings.data.set(DAY_KEYS.loud, '2026-09-13')
+
+    expect(await reminders.remind(reg, { now: afternoon })).toBe('shown')
+    expect(shown.map((each) => each.title)).toEqual(['Обзор'])
+  })
+
+  it('темы считаются на день пробуждения', async () => {
+    const days: string[] = []
+    const reminders = createReminders(
+      memory(),
+      rules((day) => {
+        days.push(day)
+        return []
+      }),
+    )
+    expect(await reminders.remind(registration().reg, { now: afternoon })).toBe('nothing')
+    expect(days).toEqual(['2026-09-13'])
+  })
+
+  it('«Проверить сейчас» без повода — уведомление idle приложения, день не отмечен, журнал не тронут', async () => {
+    const settings = memory()
+    const { reg, shown } = registration()
+    const reminders = createReminders(settings, rules(() => [dayTopic(null)]))
+
+    expect(await reminders.remind(reg, { force: true, now: afternoon })).toBe('nothing')
+    expect(shown.map((each) => each.title)).toEqual([IDLE.title])
+    expect(settings.data.has(DAY_KEYS.loud)).toBe(false)
+    expect(await reminders.readWakes()).toEqual([])
+  })
+
+  it('окно со звуком хранится в настройках устройства', async () => {
+    const reminders = createReminders(memory(), rules(() => []))
+    expect(await reminders.readWindow()).toEqual(DEFAULT_WINDOW)
+    await reminders.saveWindow({ from: 9, to: 21 })
+    expect(await reminders.readWindow()).toEqual({ from: 9, to: 21 })
   })
 })

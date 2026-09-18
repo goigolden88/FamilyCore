@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { GitHubError, blobSha, createClient, parseRepo } from './github.ts'
 import type { RepoRef } from './github.ts'
 
-const REPO: RepoRef = { owner: 'goigolden88', name: 'deluvremya-data', branch: 'main' }
+const REPO: RepoRef = { owner: 'goigolden88', name: 'polka-data', branch: 'main' }
 
 type Reply = {
   status?: number
@@ -63,24 +63,24 @@ function client(replies: Record<string, Reply | Reply[]>) {
 
 describe('parseRepo', () => {
   it('разбирает «владелец/репозиторий»', () => {
-    expect(parseRepo('goigolden88/deluvremya-data')).toEqual({
+    expect(parseRepo('goigolden88/polka-data')).toEqual({
       owner: 'goigolden88',
-      name: 'deluvremya-data',
+      name: 'polka-data',
     })
   })
 
   it('принимает ссылку из адресной строки и .git на конце', () => {
-    expect(parseRepo('https://github.com/goigolden88/deluvremya-data')).toEqual({
+    expect(parseRepo('https://github.com/goigolden88/polka-data')).toEqual({
       owner: 'goigolden88',
-      name: 'deluvremya-data',
+      name: 'polka-data',
     })
-    expect(parseRepo('https://github.com/goigolden88/deluvremya-data.git')).toEqual({
+    expect(parseRepo('https://github.com/goigolden88/polka-data.git')).toEqual({
       owner: 'goigolden88',
-      name: 'deluvremya-data',
+      name: 'polka-data',
     })
-    expect(parseRepo('  goigolden88/deluvremya-data/  ')).toEqual({
+    expect(parseRepo('  goigolden88/polka-data/  ')).toEqual({
       owner: 'goigolden88',
-      name: 'deluvremya-data',
+      name: 'polka-data',
     })
   })
 
@@ -115,7 +115,7 @@ describe('info', () => {
     const { api, calls } = client({
       '/repos/': {
         body: {
-          full_name: 'goigolden88/deluvremya-data',
+          full_name: 'goigolden88/polka-data',
           private: true,
           default_branch: 'main',
           permissions: { push: true },
@@ -124,7 +124,7 @@ describe('info', () => {
     })
 
     expect(await api.info()).toEqual({
-      fullName: 'goigolden88/deluvremya-data',
+      fullName: 'goigolden88/polka-data',
       private: true,
       canWrite: true,
       defaultBranch: 'main',
@@ -136,7 +136,7 @@ describe('info', () => {
     const { api } = client({
       '/repos/': {
         body: {
-          full_name: 'goigolden88/deluvremya-data',
+          full_name: 'goigolden88/polka-data',
           private: true,
           default_branch: 'main',
           permissions: { push: false },
@@ -282,7 +282,7 @@ describe('отправка', () => {
         { path: 'items.json', content: '[]' },
         { path: 'cycles/2026.json', content: '[1]' },
       ],
-      message: 'Делу Время',
+      message: 'Полка',
     })
 
     expect(sha).toBe('commit1')

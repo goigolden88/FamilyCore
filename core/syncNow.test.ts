@@ -1,14 +1,20 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { db } from './db.ts'
-import { getStatus, saveConfig, syncNow } from './sync.ts'
+import { shelf } from '../testing/shelf.ts'
+import { createDb } from './db.ts'
+import { createSync } from './sync.ts'
 
 /**
  * `syncNow` поверх настоящей базы, на подделанном IndexedDB. Сам проход
  * проверен в sync.test.ts на портах; здесь — то, что живёт вокруг него:
  * состояние для экрана и повторный вызов.
+ *
+ * Приложение — подставная «Полка» (`testing/shelf.ts`, Р-47 «Трапезы»).
  */
+
+const db = createDb(shelf)
+const { getStatus, saveConfig, syncNow } = createSync(shelf, db)
 
 beforeEach(async () => {
   await db.close().catch(() => {})
