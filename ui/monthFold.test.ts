@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MONTH_FOLD_FROM, monthFoldedByDefault } from './monthFold.ts'
 
-describe('месяцы длинного списка — Р-78, Р-82', () => {
+describe('месяцы длинного списка — Р-78 «Делу Время», Р-82 «Делу Время»', () => {
   it('свежий месяц развёрнут всегда', () => {
     expect(monthFoldedByDefault(0, MONTH_FOLD_FROM * 10)).toBe(false)
   })

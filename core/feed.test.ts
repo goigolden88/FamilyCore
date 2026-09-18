@@ -31,7 +31,7 @@ describe('groupFeed', () => {
     expect(ids(groups[0]?.items ?? [])).toEqual(['2026-09-10', '2026-09-01', '2026-09'])
   })
 
-  it('без даты и с кривой датой — своей группой внизу, а не пропадает и не наверху — Р-08, Р-59', () => {
+  it('без даты и с кривой датой — своей группой внизу, а не пропадает и не наверху — Р-08 «Делу Время», Р-59 «Делу Время»', () => {
     const groups = groupFeed([item(''), item('2026-09-01'), item('вчера'), item('2026-07-01')])
     expect(groups.map((group) => group.month)).toEqual(['2026-09', '2026-07', null])
     expect(groups.at(-1)?.items).toHaveLength(2)
@@ -80,7 +80,7 @@ describe('filterFeed', () => {
     expect(ids(filterFeed(list, { query: 'ЕЛКИ' }))).toEqual(['thought'])
   })
 
-  it('ищет по дате цифрами и словами — как «Заметки» (Р-61)', () => {
+  it('ищет по дате цифрами и словами — как «Заметки» (Р-61 «Делу Время»)', () => {
     expect(ids(filterFeed(list, { query: '01.07' }))).toEqual(['day'])
     expect(ids(filterFeed(list, { query: '2026-03' }))).toEqual(['thought'])
     expect(ids(filterFeed(list, { query: 'март' }))).toEqual(['thought'])

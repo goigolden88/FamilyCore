@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { CHANGES, latestChange, unseenChanges, type Change } from '../changes.ts'
 import { db } from '../core/db.ts'
 
-/** Последняя прочитанная запись «Что нового» (Р-65). В `settings`: у каждого устройства своя. */
+/** Последняя прочитанная запись «Что нового» (Р-65 «Делу Время»). В `settings`: у каждого устройства своя. */
 const SEEN = 'seenChanges'
 
 /**

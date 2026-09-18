@@ -47,7 +47,7 @@ describe('раскладка', () => {
     ])
   })
 
-  it('блоки времени режутся по месяцам — Р-28', () => {
+  it('блоки времени режутся по месяцам — Р-28 «Делу Время»', () => {
     const files = buildFiles(
       withData({
         time: [block('a', '2025-12-31'), block('b', '2026-01-31'), block('c', '2026-02-01'), block('d', '2026-02-28')],
@@ -75,14 +75,14 @@ describe('раскладка', () => {
     expect(pathsOf(files)).toContain('time/undated.json')
   })
 
-  it('заметка без даты уезжает в undated, а не теряется — Р-08', () => {
+  it('заметка без даты уезжает в undated, а не теряется — Р-08 «Делу Время»', () => {
     const files = buildFiles(withData({ notes: [note('a', null), note('b', '2026-03-01')] }))
     expect(pathsOf(files)).toContain('notes/undated.json')
     expect(JSON.parse(files.find((f) => f.path === 'notes/undated.json')?.content ?? '[]'))
       .toHaveLength(1)
   })
 
-  it('заметка с испорченной датой тоже не пропадает — Р-08', () => {
+  it('заметка с испорченной датой тоже не пропадает — Р-08 «Делу Время»', () => {
     const files = buildFiles(withData({ notes: [note('a', '31.02.2026')] }))
     expect(pathsOf(files)).toContain('notes/undated.json')
   })
@@ -171,7 +171,7 @@ describe('storeOf', () => {
     expect(storeOf('time/2026-02.txt')).toBeNull()
     expect(storeOf('time/двадцать.json')).toBeNull()
     expect(storeOf('other/2026-02.json')).toBeNull()
-    // Годовой файл раскладки «Дневников» здесь чужой (Р-28).
+    // Годовой файл раскладки «Дневников» здесь чужой (Р-28 «Делу Время»).
     expect(storeOf('time/2026.json')).toBeNull()
     expect(storeOf('time/2026-13.json')).toBeNull()
     expect(storeOf('time/2026-2.json')).toBeNull()
@@ -216,7 +216,7 @@ describe('разбор файлов с сервера', () => {
   })
 })
 
-describe('README репозитория данных (Р-69)', () => {
+describe('README репозитория данных (Р-69 «Делу Время»)', () => {
   it('называет каждый файл раскладки — таблица собрана из неё', () => {
     const text = readmeFile().content
     const produced = buildFiles(

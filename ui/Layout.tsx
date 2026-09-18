@@ -17,7 +17,7 @@ const TABS: readonly { to: string; screen: ScreenKey; end: boolean }[] = [
 ]
 
 export function Layout() {
-  // Подписи — из настроек устройства (Р-26), адреса — постоянные.
+  // Подписи — из настроек устройства (Р-26 «Делу Время»), адреса — постоянные.
   const names = useScreenNames()
 
   return (
@@ -26,7 +26,7 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {/* «В начало» и «в конец» (Р-70): видны, пока экран листают. */}
+      {/* «В начало» и «в конец» (Р-70 «Делу Время»): видны, пока экран листают. */}
       <ScrollButtons />
 
       <nav className="tabs">

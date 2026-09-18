@@ -134,7 +134,7 @@ function fakeDb(seed: Partial<{ [S in SyncedStore]: Record_[] }> = {}) {
   const ports: Ports = {
     readAll: () => Promise.resolve(data as never),
 
-    /** Правило Р-07: по `id` побеждает поздний `updatedAt`. */
+    /** Правило Р-07 «Дневников»: по `id` побеждает поздний `updatedAt`. */
     merge: (store, incoming) => {
       let applied = 0
       for (const record of incoming) {
@@ -360,7 +360,7 @@ describe('гонка двух устройств', () => {
     expect(result.pushed).toBeGreaterThan(0)
   })
 
-  it('проиграв трижды, откладывает, а не давит силой; между попытками пауза — Р-62', async () => {
+  it('проиграв трижды, откладывает, а не давит силой; между попытками пауза — Р-62 «Дневников»', async () => {
     const repo = fakeRepo(repoWith({ categories: [item('i1', '2026-09-01T10:00:00.000Z')] }))
     const local = fakeDb({ categories: [item('i2', '2026-09-02T10:00:00.000Z')] })
 
@@ -479,7 +479,7 @@ describe('срок жизни токена', () => {
   })
 })
 
-describe('README репозитория данных (Р-69)', () => {
+describe('README репозитория данных (Р-69 «Делу Время»)', () => {
   it('кладётся, если его нет, — и в заведённом репозитории тоже', async () => {
     const seed = { categories: [item('i1', '2026-09-01T10:00:00.000Z')] }
     const repo = fakeRepo(repoWith(seed))

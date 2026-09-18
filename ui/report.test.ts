@@ -42,7 +42,7 @@ describe('журнал ошибок', () => {
   })
 })
 
-describe('экран ошибки — путь без запроса, Р-66', () => {
+describe('экран ошибки — путь без запроса, Р-66 «Делу Время»', () => {
   it('текст из «Поделиться» в отчёт не попадает', () => {
     expect(screenPath('#/inbox?shared=%D0%BB%D0%B8%D1%87%D0%BD%D0%BE%D0%B5')).toBe('#/inbox')
     expect(screenPath('#/time?day=2026-09-10')).toBe('#/time')

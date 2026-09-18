@@ -3,7 +3,7 @@ import { installAdvice, isIos, type InstallFacts } from './install.ts'
 
 const tab: InstallFacts = { standalone: false, justInstalled: false, ios: false, canPrompt: false }
 
-describe('совет по установке — Р-69', () => {
+describe('совет по установке — Р-69 «Дневников»', () => {
   it('открыто иконкой — установлено, что бы ни присылал браузер', () => {
     expect(installAdvice({ ...tab, standalone: true, canPrompt: true })).toBe('installed')
     expect(installAdvice({ ...tab, standalone: true, ios: true })).toBe('installed')
