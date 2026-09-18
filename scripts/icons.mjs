@@ -1,5 +1,12 @@
 /**
- * Генератор иконок PWA из геометрии public/favicon.svg.
+ * Генератор иконок PWA из геометрии public/favicon.svg приложения.
+ *
+ * Растеризатор и PNG — общие; цвет и рисунок — приложения (Р-48 «Трапезы»).
+ * Его `scripts/icons.mjs` описывает свои фигуры и зовёт `writeIcons`:
+ *
+ *   import { writeIcons, BACKGROUND, INK } from '../src/shared/scripts/icons.mjs'
+ *   const ACCENT = [0x7c, 0xcf, 0x8a]
+ *   writeIcons({ out: 'public', shapes: [{ x: 74, y: 116, w: 280, h: 280, r: 140, color: ACCENT, alpha: 1 }, …] })
  *
  * Запускается руками (`npm run icons`), результат коммитится. В сборку
  * не входит: иконка меняется раз в год, гонять растеризатор на каждом
@@ -13,41 +20,25 @@
 
 import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
+import { join } from 'node:path'
 
 /** Пространство рисования. Совпадает с viewBox в favicon.svg. */
 const DESIGN = 512
 
-const BACKGROUND = [0x1b, 0x1c, 0x1e]
+/** Фон иконки — общий у всей семьи; акцент у каждого приложения свой. */
+export const BACKGROUND = [0x1b, 0x1c, 0x1e]
 const CORNER_RADIUS = 112
 
-/**
- * Акцент «Делу Время» — тёплый. Фон общий с «Дневниками», акцент нет:
- * две иконки на одном телефоне не должны путаться.
- */
-const ACCENT = [0xf2, 0xb3, 0x5b]
-const INK = [0xec, 0xec, 0xee]
+/** Цвет штрихов поверх фона. Акцент — у приложения: иконки на одном телефоне не должны путаться. */
+export const INK = [0xec, 0xec, 0xee]
 
 /**
- * Те же фигуры, что в favicon.svg. Расходиться им нельзя.
- *
- * Круг — скруглённый прямоугольник с радиусом в половину стороны, кольцо —
- * круг цвета фона поверх круга акцента. Всё внутри безопасной зоны maskable:
- * круга в 80% стороны, который система не обрежет никогда.
+ * Фигуры иконки — у приложения: те же, что в его favicon.svg, расходиться им
+ * нельзя. Фигура — скруглённый прямоугольник `{ x, y, w, h, r, color, alpha }`
+ * в пространстве 512×512. Круг — прямоугольник с радиусом в половину стороны,
+ * кольцо — круг цвета фона поверх круга акцента. Всё внутри безопасной зоны
+ * maskable: круга в 80% стороны, который система не обрежет никогда.
  */
-const SHAPES = [
-  // Циферблат: кольцо
-  { x: 106, y: 106, w: 300, h: 300, r: 150, color: ACCENT, alpha: 1 },
-  { x: 130, y: 130, w: 252, h: 252, r: 126, color: BACKGROUND, alpha: 1 },
-  // Стрелки: минутная вверх, часовая вправо
-  { x: 244, y: 158, w: 24, h: 110, r: 12, color: INK, alpha: 1 },
-  { x: 244, y: 244, w: 88, h: 24, r: 12, color: INK, alpha: 1 },
-  // Ось
-  { x: 238, y: 238, w: 36, h: 36, r: 18, color: ACCENT, alpha: 1 },
-]
 
 /** Сглаживание перебором: 4×4 выборки на пиксель. */
 const SUPERSAMPLE = 4
@@ -92,7 +83,7 @@ function paint(pixels, size, rect, color, alpha, scale) {
  *   интересует полное заполнение квадрата, обрезает она сама, и своё
  *   скругление внутри её маски даёт заметный тёмный ободок.
  */
-function render(size, rounded) {
+function render(size, rounded, shapes, background) {
   const scale = size / DESIGN
   const pixels = new Uint8Array(size * size * 4)
 
@@ -100,8 +91,8 @@ function render(size, rounded) {
     ? { x: 0, y: 0, w: DESIGN, h: DESIGN, r: CORNER_RADIUS }
     : { x: 0, y: 0, w: DESIGN, h: DESIGN, r: 0 }
 
-  paint(pixels, size, backdrop, BACKGROUND, 1, scale)
-  for (const shape of SHAPES) {
+  paint(pixels, size, backdrop, background, 1, scale)
+  for (const shape of shapes) {
     paint(pixels, size, shape, shape.color, shape.alpha, scale)
   }
 
@@ -165,10 +156,16 @@ const TARGETS = [
   { file: 'apple-touch-icon-180x180.png', size: 180, rounded: false },
 ]
 
-mkdirSync(OUT, { recursive: true })
+/**
+ * Пишет четыре иконки приложения в папку `out` (обычно `public`).
+ * `shapes` — фигуры приложения; `background` — фон, по умолчанию общий.
+ */
+export function writeIcons({ out, shapes, background = BACKGROUND }) {
+  mkdirSync(out, { recursive: true })
 
-for (const target of TARGETS) {
-  const png = encodePng(target.size, render(target.size, target.rounded))
-  writeFileSync(join(OUT, target.file), png)
-  console.log(`${target.file} — ${target.size}×${target.size}, ${png.length} байт`)
+  for (const target of TARGETS) {
+    const png = encodePng(target.size, render(target.size, target.rounded, shapes, background))
+    writeFileSync(join(out, target.file), png)
+    console.log(`${target.file} — ${target.size}×${target.size}, ${png.length} байт`)
+  }
 }
