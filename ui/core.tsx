@@ -13,17 +13,32 @@
  */
 
 import { createContext, useContext, useState, type ReactNode } from 'react'
-import type { ChangeEvent, KeyValue, Snapshot } from '../core/db.ts'
+import type { KeyValue, Origin, Snapshot } from '../core/db.ts'
 import type { AppConfig, Base, StoreMap } from '../core/model.ts'
 import type { Sync } from '../core/sync.ts'
 import { startFolds } from './useFold.ts'
+
+/**
+ * Событие базы — то, что из него видит общий интерфейс: имя хранилища строкой.
+ *
+ * Не `ChangeEvent` из `core/db.ts`: он обобщён по таблице хранилищ, и
+ * компилятор сравнивает `ChangeEvent<R>` приложения с `ChangeEvent<StoreMap>`
+ * по параметру, а не по полям. Из-за `keyof R` он требует `StoreMap` не уже
+ * таблицы приложения — и `db` любого настоящего приложения сюда не подходил,
+ * хотя по полям событие то же. Проверка — `ui/core.test.ts`.
+ */
+type SharedChangeEvent = {
+  store: string
+  origin: Origin
+  count: number
+}
 
 /** База — то, чем пользуется общий интерфейс. */
 export type SharedDb = {
   settings: KeyValue
   ready(): Promise<void>
   count(store: string): Promise<number>
-  onChange(listener: (event: ChangeEvent) => void): () => void
+  onChange(listener: (event: SharedChangeEvent) => void): () => void
   exportAll(): Promise<Snapshot>
   putMany(store: string, records: readonly Base[]): Promise<Base[]>
 }
