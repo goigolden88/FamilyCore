@@ -1,3 +1,17 @@
+/*
+ * Каркас стилей семьи (Р-48 «Трапезы»): переменные, шапка экрана с шестерёнкой
+ * и точкой синхронизации, нижняя панель, кнопки, поля, панель, сворачивание,
+ * график, и стили компонентов ядра — импорт, промпт, отчёт об ошибке, кнопки
+ * прокрутки.
+ *
+ * Приложение подключает этот файл первым, а свой `src/styles.css` — после:
+ * там его экраны и его акцент. Значения переменных ниже — «Делу Время» с
+ * d86f0aa, умолчание; приложение переопределяет их в своём `:root`.
+ *
+ * Первая нарезка из styles.css «Делу Время»: граница «каркас или экран» найдена
+ * глазами и проверяется при переводе «Трапезы» — прогоном и вёрсткой на телефоне
+ * (открытый вопрос в docs/05-Решения.md).
+ */
 :root {
   --bg: #ffffff;
   --surface: #f4f4f5;
@@ -184,46 +198,8 @@ a {
   color: var(--error);
 }
 
-.stub {
-  color: var(--muted);
-  padding: 16px;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-}
-
 .block {
   margin-bottom: 28px;
-}
-
-.stats {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 12px;
-}
-
-.stats td {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-/* Подписи столбцов сравнения (Р-55 «Делу Время»): мелко и серым, число важнее. */
-.stats th {
-  padding: 0 0 4px;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 500;
-  text-align: left;
-  border-bottom: 1px solid var(--line);
-}
-
-.stats th.num {
-  text-align: right;
-}
-
-/* Отметки нормы по неделям месяца: цифры дней ровными столбиками. */
-.norm-marks {
-  font-variant-numeric: tabular-nums;
-  margin: 2px 0;
 }
 
 /* ─── График столбцами (Р-57 «Делу Время») ────────────────────────────────────────────── */
@@ -293,35 +269,6 @@ a.chart__col:focus-visible .chart__label {
 .minibars__base {
   stroke: var(--line);
   stroke-width: 1;
-}
-
-.stats .minibars-cell {
-  width: 96px;
-  padding-left: 12px;
-}
-
-.stats .num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  padding-left: 12px;
-}
-
-.facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 6px 16px;
-  margin: 0;
-}
-
-.facts dt {
-  color: var(--muted);
-}
-
-.facts dd {
-  margin: 0;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Нижняя навигация.
@@ -439,19 +386,6 @@ a.chart__col:focus-visible .chart__label {
   gap: 8px;
 }
 
-/* ─── Мелочи экранов ─────────────────────────────────────────────────────── */
-
-.link-btn {
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
 .plain {
   list-style: none;
   margin: 8px 0 0;
@@ -471,14 +405,6 @@ a.chart__col:focus-visible .chart__label {
    в одну строку не помещаются. */
 .row--wrap {
   flex-wrap: wrap;
-}
-
-/* Подзаголовок внутри блока: «Установка» в приветствии и настройках. */
-.unit__name {
-  margin: 0 0 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
 }
 
 /* Отдельная панель: приветствие читается как другое, а не ещё один блок. */
@@ -562,127 +488,6 @@ a.chart__col:focus-visible .chart__label {
   margin-top: 16px;
 }
 
-/* ─── Заметки ────────────────────────────────────────────────────────────── */
-
-/* Поле захвата — в несколько строк: из «Поделиться» приходят заголовок
-   и ссылка на отдельных строках. */
-.field textarea.inbox__field {
-  min-height: 96px;
-  padding: 10px 12px;
-  resize: vertical;
-}
-
-/* Поиск над списками — во всю ширину, как поле формы. Из «Дневников»;
-   шрифт 16px: на меньшем Safari зумит страницу при фокусе. */
-.search {
-  width: 100%;
-  min-height: 44px;
-  margin-bottom: 12px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 16px;
-}
-
-.note {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-
-/* Текст записи — кнопка карточки: палец попадает в строку целиком. */
-.note__main {
-  min-height: 44px;
-  font-weight: 400;
-}
-
-/* Ссылки длинные и без пробелов: без переноса они раздвигают экран вбок. */
-.note__text {
-  font-size: 15px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.note__meta {
-  font-size: 13px;
-}
-
-.note__card {
-  margin-top: 8px;
-}
-
-.note__links {
-  margin: 0;
-  font-size: 14px;
-  overflow-wrap: anywhere;
-}
-
-.month-group + .month-group {
-  margin-top: 16px;
-}
-
-/* ─── Лента (Р-62 «Делу Время») ───────────────────────────────────────────────────────── */
-
-/* Строки, а не карточки: в ленте их сотни, и карточка на каждую растянула
-   бы экран вчетверо. Из «Дневников». */
-.feed {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-}
-
-.feed__row {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  min-height: 44px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-  color: inherit;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.feed__date {
-  flex: none;
-  width: 3.2em;
-  font-size: 13px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.feed__main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.feed__title {
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.feed__detail {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.feed__kind {
-  flex: none;
-  font-size: 12px;
-}
-
-/* Стрелка — только у строки с переходом: остальные лента лишь показывает (Р-59 «Делу Время»). */
-.feed__go {
-  flex: none;
-}
-
 /* Отчёт об ошибке — целиком до отправки (Р-66 «Делу Время»). Из «Дневников»; перенос
    длинных строк браузера — чтобы экран не раздвигало вбок. */
 .report {
@@ -694,13 +499,6 @@ a.chart__col:focus-visible .chart__label {
   font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-/* ─── Мелочи, вернувшиеся с учётом времени ───────────────────────────────── */
-
-.back {
-  color: var(--accent);
-  text-decoration: none;
 }
 
 /* Поле в строке с кнопкой занимает всё свободное место. */
@@ -717,182 +515,6 @@ a.chart__col:focus-visible .chart__label {
   font-size: 16px;
 }
 
-/* Название-кнопка. Выглядит как название, ведёт себя как кнопка:
-   раскрывает строку, а не уводит на другой экран. */
-.plain-btn {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-weight: 600;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.chip {
-  padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Стрелки порядка: квадрат 44 пикселя — палец не промахивается. */
-.icon-btn {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: 18px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.icon-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-/* ─── Категории ──────────────────────────────────────────────────────────── */
-
-.cat {
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-
-.cat__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-}
-
-.cat__name {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  overflow-wrap: anywhere;
-}
-
-.cat__presets {
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.cat__body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 8px 0 4px;
-}
-
-.cat__body .link-btn {
-  align-self: flex-start;
-}
-
-/* «Удалить» и выбор, куда перенести блоки, — отдельной строкой под кнопками. */
-.cat__remove {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 4px 0;
-}
-
-.cat__remove .form {
-  align-self: stretch;
-}
-
-/* ─── Учёт времени ───────────────────────────────────────────────────────── */
-
-.presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-/* Кнопка «Чтение +30» — главный путь записи: пилюля в акцент, не меньше
-   44 пикселей. Нажатие видно заливкой: тап должен читаться как действие. */
-.preset {
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.preset:active {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-/* Отклик на тап и «Отменить» — одной строкой, переносится на узком. */
-.added {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-}
-
-/* Главная строка итога — сумма дня. Крупнее соседей: за ней и смотрят. */
-.lead {
-  font-size: 17px;
-  font-weight: 600;
-  margin: 4px 0 8px;
-}
-
-.day-sum .stats {
-  margin-bottom: 8px;
-}
-
-.tblock {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 44px;
-  border-bottom: 1px solid var(--line);
-}
-
-/* Заметка блока — под строкой, мелко: в несколько строк, и не раздвигает экран. */
-.tblock__note {
-  margin: 4px 0 6px;
-  font-size: 13px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.tblock__main {
-  min-width: 0;
-  min-height: 44px;
-  font-weight: 400;
-  overflow-wrap: anywhere;
-}
-
 /* Выбор в строке с кнопкой — как поле: во всё свободное место. */
 .row select {
   flex: 1;
@@ -907,273 +529,9 @@ a.chart__col:focus-visible .chart__label {
   font-size: 16px;
 }
 
-/* Выбранное — заливкой, а не галочкой: галочка требует прицеливания. */
-.chip--on {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-/* «Сегодня» и «вчера» у поля даты: в строке с полем высотой 44 пикселя
-   и не мельче его — палец попадает в строку целиком. */
-.chip--today {
-  flex: none;
-  min-height: 44px;
-}
-
 .btn--danger {
   border-color: var(--error);
   color: var(--error);
-}
-
-/* ─── План дня ───────────────────────────────────────────────────────────── */
-
-.plan-item {
-  display: flex;
-  flex-direction: column;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-.plan-item__row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 44px;
-}
-
-/* Текст пункта — кнопка карточки: палец попадает в строку целиком. */
-.plan-item__text {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  font-size: 15px;
-  font-weight: 400;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-span.plan-item__text {
-  display: flex;
-  align-items: center;
-}
-
-.plan-item--done .plan-item__text {
-  color: var(--muted);
-  text-decoration: line-through;
-}
-
-.plan-item__est {
-  flex: none;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.plan-item__actions {
-  padding: 2px 0 6px;
-}
-
-/* Галочка: под палец — квадрат 44 пикселя, рисуется меньше. */
-.check-btn {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin-left: -10px;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.check-btn__box {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--muted);
-  border-radius: 6px;
-  color: var(--on-accent);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.check-btn[aria-pressed='true'] .check-btn__box {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.star-btn {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  margin-right: -10px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.star-btn[aria-pressed='true'] {
-  color: var(--accent);
-}
-
-/* Слот главного — отдельно от списка: второе туда не помещается (Р-07 «Делу Время»). */
-.plan__main {
-  margin-bottom: 12px;
-  padding: 4px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-.plan__main .plan-item {
-  border-bottom: 0;
-}
-
-.plan__main > .muted {
-  margin: 8px 0;
-}
-
-.plan__label {
-  display: block;
-  padding-top: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.plan__add,
-.plan__bulk {
-  margin-bottom: 8px;
-}
-
-/* Реализм — плашкой под заголовком плана (Р-72 «Делу Время»): серой строкой под списком
-   его не замечали. */
-.plan__realism {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  font-size: 15px;
-}
-
-/* Перенос (Р-80 «Делу Время»): тихая кнопка в строке, как звезда. */
-.move-btn {
-  flex: none;
-  width: 40px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.move-btn[aria-expanded='true'] {
-  color: var(--accent);
-}
-
-.plan-move {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 4px 0 10px;
-}
-
-/* Итоги и история (Р-71 «Делу Время»): каждая ссылка — своя карточка, видно, что это
-   разные экраны. */
-.link-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.link-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--text);
-  text-decoration: none;
-}
-
-.link-card__icon {
-  flex: none;
-  display: flex;
-  color: var(--accent);
-}
-
-.link-card__main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.link-card__title {
-  font-weight: 600;
-}
-
-.link-card__sub {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.link-card__go {
-  flex: none;
-  color: var(--muted);
-  font-size: 20px;
-}
-
-/* Не влезает — акцентом, а не красным: это предупреждение до начала дня,
-   а не провал (тот же довод, что в Р-05 «Делу Время»). */
-.plan__realism--over {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.plan-card {
-  padding: 4px 0 10px;
-}
-
-/* ─── Шаблоны дня ────────────────────────────────────────────────────────── */
-
-.tpl-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-/* Оценка рядом с названием пункта — узкая: в ней три-четыре цифры. */
-.row .tpl-item__est {
-  flex: 0 0 5.5em;
-}
-
-.tpl-item__tools {
-  justify-content: flex-end;
 }
 
 /* ─── Импорт записей ─────────────────────────────────────────────────────── */
@@ -1204,35 +562,6 @@ span.plan-item__text {
   font-size: 12px;
   max-height: 320px;
   overflow: auto;
-}
-
-/* Листание дней на «Времени» (Р-25 «Делу Время»): стрелки по краям, дата посередине. */
-.day-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-/* Поле даты между стрелками (Р-27 «Делу Время»): тап открывает календарь телефона. */
-.day-nav__date {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 16px;
-  text-align: center;
-}
-
-/* Обзор недели: мысль возврата и наблюдение — как записаны, с переносами строк. */
-.recall {
-  white-space: pre-wrap;
-  padding-block: 4px;
 }
 
 /* Кнопки «в начало» и «в конец» — справа над нижней панелью, где их
@@ -1266,27 +595,4 @@ span.plan-item__text {
   cursor: pointer;
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
   -webkit-tap-highlight-color: transparent;
-}
-
-/* Группы категорий (Р-81 «Делу Время»): строка группы в итогах — жирнее, её категории —
-   с отступом; заголовок группы на экране категорий — со стрелками. */
-.stats__group td {
-  padding-top: 10px;
-  font-weight: 600;
-}
-
-.stats td.stats__sub {
-  padding-left: 16px;
-}
-
-.cat-group__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.cat-group__name {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
 }
