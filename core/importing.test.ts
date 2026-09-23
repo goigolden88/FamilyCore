@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { shelf } from '../testing/shelf.ts'
 import {
   COMMON_PROMPT_RULES,
+  countsText,
   createImporting,
   IMPORT_VERSION,
   mergeResults,
@@ -102,5 +103,74 @@ describe('помощники разбора', () => {
     expect(plan.added).toEqual([{ count: 5, forms }])
     expect(plan.skipped).toBe(1)
     expect(planTotal(plan)).toBe(0)
+  })
+})
+
+describe('заметки, правки и удаления — Я-07', () => {
+  const book: [string, string, string] = ['книга', 'книги', 'книг']
+  const shelfForms: [string, string, string] = ['полка', 'полки', 'полок']
+
+  it('раздел без новых полей — прежней формы, и сводится как раньше', () => {
+    const plan = mergeResults([{ writes: {}, added: [], skipped: 0, issues: [] }])
+    expect(plan.notes).toEqual([])
+    expect(plan.changed).toEqual([])
+    expect(plan.removed).toEqual([])
+  })
+
+  it('заметки идут отдельно от отказов и не примешиваются к ним', () => {
+    const plan = mergeResults([
+      {
+        writes: {},
+        added: [],
+        skipped: 0,
+        issues: [{ section: 'books', title: 'книга 1', reason: 'нет названия' }],
+        notes: [{ section: 'books', title: 'округление', text: 'сумма округлена' }],
+      },
+      {
+        writes: {},
+        added: [],
+        skipped: 0,
+        issues: [],
+        notes: [{ section: 'sessions', title: 'сеанс', text: 'шесть часов подряд — похоже на опечатку' }],
+      },
+    ])
+    expect(plan.issues).toHaveLength(1)
+    expect(plan.notes?.map((each) => each.title)).toEqual(['округление', 'сеанс'])
+  })
+
+  it('правки и удаления складываются по склонению, как добавленное', () => {
+    const plan = mergeResults([
+      { writes: {}, added: [], skipped: 0, issues: [], changed: [{ count: 1, forms: book }] },
+      {
+        writes: {},
+        added: [],
+        skipped: 0,
+        issues: [],
+        changed: [
+          { count: 2, forms: book },
+          { count: 1, forms: shelfForms },
+        ],
+        removed: [{ count: 1, forms: shelfForms }],
+      },
+    ])
+    expect(plan.changed).toEqual([
+      { count: 3, forms: book },
+      { count: 1, forms: shelfForms },
+    ])
+    expect(plan.removed).toEqual([{ count: 1, forms: shelfForms }])
+  })
+
+  it('сведение не портит планы разделов', () => {
+    const changed = [{ count: 1, forms: book }]
+    mergeResults([
+      { writes: {}, added: [], skipped: 0, issues: [], changed },
+      { writes: {}, added: [], skipped: 0, issues: [], changed: [{ count: 4, forms: book }] },
+    ])
+    expect(changed).toEqual([{ count: 1, forms: book }])
+  })
+
+  it('счёт словами: число и склонение через запятую', () => {
+    expect(countsText([{ count: 1, forms: book }, { count: 5, forms: shelfForms }])).toBe('1 книга, 5 полок')
+    expect(countsText([])).toBe('')
   })
 })

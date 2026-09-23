@@ -247,6 +247,60 @@ describe('мягкое удаление', () => {
   })
 })
 
+describe('выборка по индексу — Я-08', () => {
+  const ids = (records: readonly { id: string }[]) => records.map((each) => each.id).sort()
+
+  beforeEach(async () => {
+    await db.putRemote('sessions', [
+      mark('s1', { date: '2026-08-31' }),
+      mark('s2', { date: '2026-09-01' }),
+      mark('s3', { date: '2026-09-15' }),
+      mark('s4', { date: '2026-09-30' }),
+      mark('s5', { date: '2026-10-01' }),
+    ])
+  })
+
+  it('диапазон — границы включительно', async () => {
+    expect(ids(await db.getByIndex('sessions', 'date', { from: '2026-09-01', to: '2026-09-30' }))).toEqual([
+      's2',
+      's3',
+      's4',
+    ])
+  })
+
+  it('диапазон с одной границей', async () => {
+    expect(ids(await db.getByIndex('sessions', 'date', { from: '2026-09-30' }))).toEqual(['s4', 's5'])
+    expect(ids(await db.getByIndex('sessions', 'date', { to: '2026-09-01' }))).toEqual(['s1', 's2'])
+  })
+
+  it('ключ — точное совпадение', async () => {
+    await db.putRemote('quotes', [
+      { id: 'q1', updatedAt: T1, bookId: 'b1', text: 'а' },
+      { id: 'q2', updatedAt: T1, bookId: 'b2', text: 'б' },
+    ])
+    expect(ids(await db.getByIndex('quotes', 'bookId', 'b2'))).toEqual(['q2'])
+  })
+
+  it('надгробия отсеиваются, как у getAll, и видны с includeDeleted', async () => {
+    await db.remove('sessions', 's3')
+    const range = { from: '2026-09-01', to: '2026-09-30' }
+    expect(ids(await db.getByIndex('sessions', 'date', range))).toEqual(['s2', 's4'])
+    expect(ids(await db.getByIndex('sessions', 'date', range, { includeDeleted: true }))).toEqual(['s2', 's3', 's4'])
+  })
+
+  it('запись без поля в индекс не попадает — так устроен IndexedDB', async () => {
+    await db.putRemote('books', [
+      { id: 'b1', updatedAt: T1, title: 'С датой', addedOn: '2026-09-01' },
+      { id: 'b2', updatedAt: T1, title: 'Без даты', addedOn: null },
+    ])
+    expect(ids(await db.getByIndex('books', 'addedOn', { to: '9999' }))).toEqual(['b1'])
+  })
+
+  it('индекса нет на устройстве — внятная ошибка с именами', async () => {
+    await expect(db.getByIndex('shelves', 'name', 'Чтение')).rejects.toThrow('у хранилища «shelves» нет индекса «name»')
+  })
+})
+
 describe('слияние по updatedAt', () => {
   it('входящая новее — побеждает', async () => {
     await db.putRemote('shelves', [item('i1', { name: 'Чтение', updatedAt: T1 })])
@@ -683,6 +737,22 @@ describe('миграция — путь установленной копии', 
       } finally {
         raw.close()
       }
+    } finally {
+      await v2.close()
+    }
+  })
+
+  it('индекс, заведённый миграцией, читается, хотя в конфиге его нет — Я-08', async () => {
+    const v2 = createDb(shelfConfig({ schemaVersion: 2, migrations: [addIndex] }))
+    try {
+      await v2.createLegacyBase(1, {
+        quotes: [
+          { id: 'q1', updatedAt: T1, bookId: 'b1', text: 'Рукописи не горят' },
+          { id: 'q2', updatedAt: T1, bookId: 'b1', text: 'Никогда и ничего не просите' },
+        ],
+      })
+      await v2.ready()
+      expect((await v2.getByIndex('quotes', 'text', 'Рукописи не горят')).map((each) => each.id)).toEqual(['q1'])
     } finally {
       await v2.close()
     }
