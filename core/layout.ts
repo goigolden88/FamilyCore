@@ -14,8 +14,9 @@
  *
  * Нарезка нужна git и сети, а не человеку: без неё каждая отметка
  * переписывала бы всю базу и раздувала историю коммитов (Р-08 «Дневников»).
- * По месяцам, а не по годам, как у них, — Р-28 «Делу Время»: годовой файл
- * блоков к декабрю отправлялся бы по полмегабайта на каждое нажатие.
+ * Нарезка — по годам, как у них, или по месяцам (Р-28 «Делу Время»: годовой
+ * файл блоков к декабрю отправлялся бы по полмегабайта на каждое нажатие);
+ * выбирает приложение для каждого хранилища (Я-09).
  *
  * Сама раскладка — договор семьи (02-Архитектура, «Раскладка репозитория
  * данных»): её читает метаприложение.
@@ -86,13 +87,24 @@ export function metaFile(schemaVersion: number): RepoFile {
   return { path: META_PATH, content: `${JSON.stringify({ schemaVersion }, null, 2)}\n` }
 }
 
-/** `2026-02-14` → `2026-02`. Не дата — null: запись уедет в undated. */
-function monthOf(date: string): string | null {
-  return isDateOrMonth(date) ? date.slice(0, 7) : null
+/**
+ * Имя файла записи в нарезанном хранилище, без `.json`: `2026-02-14` →
+ * `2026-02` по месяцам, `2026` по годам. Не дата — null: запись уедет
+ * в undated.
+ *
+ * Год — первые четыре знака, а не число (Я-09): `0999` остаётся `0999`,
+ * и `storeOf` узнаёт файл обратно.
+ */
+function bucketOf(split: 'month' | 'year', date: string): string | null {
+  if (!isDateOrMonth(date)) return null
+  return split === 'month' ? date.slice(0, 7) : date.slice(0, 4)
 }
 
 /** Имя файла месяца: `2026-02`. Месяц тринадцатый — файл не наш. */
 const MONTH_FILE = '\\d{4}-(?:0[1-9]|1[0-2])'
+
+/** Имя файла года: `2026` (Я-09). */
+const YEAR_FILE = '\\d{4}'
 
 /**
  * Разбор файла, пришедшего с сервера.
@@ -139,8 +151,8 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
     if (place.split === 'none') return place.path
 
     const date = place.dateOf(record)
-    const month = date === null ? null : monthOf(date)
-    return `${place.dir}/${month ?? UNDATED}.json`
+    const bucket = date === null ? null : bucketOf(place.split, date)
+    return `${place.dir}/${bucket ?? UNDATED}.json`
   }
 
   /** Все файлы, которые хранилище занимает при таком наборе записей. */
@@ -166,12 +178,12 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
    * Полное дерево файлов по содержимому базы.
    *
    * Собирается целиком, а не по списку изменённых записей (Р-33 «Дневников»): у отметки
-   * может смениться дата, а с ней месяц — по пометке «запись такая-то изменилась»
+   * может смениться дата, а с ней месяц или год — по пометке «запись такая-то изменилась»
    * старый файл не найти. Отправлены будут только те файлы, чей отпечаток
-   * разошёлся с деревом на сервере, так что прошлые месяцы не переписываются.
+   * разошёлся с деревом на сервере, так что прошлые месяцы и годы не переписываются.
    *
    * `merged` — пути, чьё содержимое уже влито в базу на этом же проходе. Если
-   * месяц опустел (последняя запись переехала в другой), его файл перезаписывается
+   * месяц или год опустел (последняя запись переехала в другой), его файл перезаписывается
    * пустым списком; без этого на сервере навсегда осталась бы копия записи.
    * Пути, которые не читались, сюда передавать нельзя — затрём чужие данные.
    */
@@ -206,11 +218,22 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
       if (place.split === 'none') {
         rows.push(`| \`${place.path}\` | ${config.storeNotes[store]} |`)
       } else {
-        rows.push(`| \`${place.dir}/ГГГГ-ММ.json\` | ${config.storeNotes[store]} |`)
+        const name = place.split === 'month' ? 'ГГГГ-ММ' : 'ГГГГ'
+        rows.push(`| \`${place.dir}/${name}.json\` | ${config.storeNotes[store]} |`)
         rows.push(`| \`${place.dir}/${UNDATED}.json\` | те же записи без разбираемой даты |`)
       }
     }
     return rows
+  }
+
+  /**
+   * Что в прошлом не переписывается — словами раскладки. У приложения без
+   * годовых мест — «месяцы», как было до Я-09: его README не меняется ни на байт.
+   */
+  function pastText(): string {
+    const splits = new Set(config.stores.map((store) => placeOf(store).split))
+    if (!splits.has('year')) return 'Прошлые месяцы'
+    return splits.has('month') ? 'Прошлые месяцы и годы' : 'Прошлые годы'
   }
 
   function readmeFile(): RepoFile {
@@ -231,7 +254,7 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
       '|---|---|',
       ...readmeRows(),
       '',
-      'Прошлые месяцы не переписываются, пока в них ничего не правят: так каждое',
+      `${pastText()} не переписываются, пока в них ничего не правят: так каждое`,
       'нажатие кнопки не переписывает всю базу и не раздувает историю коммитов.',
       '',
       '## Правила',
@@ -283,8 +306,10 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
       const place = placeOf(store)
       if (place.split === 'none') {
         if (place.path === path) return store
-      } else if (new RegExp(`^${place.dir}/(?:${MONTH_FILE}|${UNDATED})\\.json$`).test(path)) {
-        return store
+      } else {
+        // Файл чужой нарезки в папке — не наш (Я-09): нарезка места не меняется.
+        const name = place.split === 'month' ? MONTH_FILE : YEAR_FILE
+        if (new RegExp(`^${place.dir}/(?:${name}|${UNDATED})\\.json$`).test(path)) return store
       }
     }
     return null
