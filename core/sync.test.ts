@@ -440,6 +440,53 @@ describe('переезд записи между месяцами', () => {
   })
 })
 
+describe('годовая нарезка — Я-09', () => {
+  function review(id: string, writtenOn: string | null, updatedAt: string): Record_ {
+    return { id, updatedAt, bookId: 'b1', writtenOn, text: 'Отзыв' }
+  }
+
+  it('годовой файл с сервера прилетает в базу — и день, и месяц, и без даты', async () => {
+    const repo = fakeRepo({
+      'meta.json': `${JSON.stringify({ schemaVersion: SCHEMA_VERSION }, null, 2)}\n`,
+      'reviews/2025.json': canonical([
+        review('r1', '2025-03-14', '2026-09-01T10:00:00.000Z'),
+        review('r2', '2025-07', '2026-09-01T10:00:00.000Z'),
+      ] as never),
+      'reviews/undated.json': canonical([review('r3', null, '2026-09-01T10:00:00.000Z')] as never),
+    })
+    const local = fakeDb()
+
+    const result = await runSync(repo.api, local.ports)
+
+    expect(result.pulled).toBe(3)
+    expect(local.data.reviews.map((record) => record.id).sort()).toEqual(['r1', 'r2', 'r3'])
+  })
+
+  it('своё уезжает в файл года, а не месяца', async () => {
+    const repo = fakeRepo()
+    const local = fakeDb({ reviews: [review('r1', '2026-03', '2026-09-01T10:00:00.000Z')] })
+
+    await runSync(repo.api, local.ports)
+
+    expect(Object.keys(repo.files()).filter((path) => path.startsWith('reviews/'))).toEqual(['reviews/2026.json'])
+  })
+
+  it('переезд между годами: старый файл перезаписывается пустым, копии не остаётся', async () => {
+    const seed = { reviews: [review('r1', '2025-12-31', '2026-01-01T10:00:00.000Z')] }
+    const repo = fakeRepo(repoWith(seed))
+    const local = fakeDb(seed)
+    await runSync(repo.api, local.ports)
+    expect(repo.files()['reviews/2025.json']).toBeDefined()
+
+    // Дату поправили: отзыв написан уже в новом году.
+    local.data.reviews[0] = review('r1', '2026-01-02', '2026-01-02T10:00:00.000Z')
+    await runSync(repo.api, local.ports)
+
+    expect(JSON.parse(repo.files()['reviews/2025.json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(repo.files()['reviews/2026.json'] ?? '[]')).toHaveLength(1)
+  })
+})
+
 describe('чужое в репозитории', () => {
   it('README и прочее руками положенное не трогается', async () => {
     const repo = fakeRepo({ ...repoWith({}), 'README.md': '# Мои записи о книгах\n' })

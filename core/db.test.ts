@@ -551,6 +551,19 @@ describe('слепок', () => {
     expect(await db.count('shelves')).toBe(2)
     expect(await db.count('sessions')).toBe(1)
   })
+
+  it('хранилище с годовой нарезкой едет в слепке, как любое — Я-09', async () => {
+    // Слепок раскладки не знает: одно хранилище — один массив, как бы оно
+    // ни лежало в репозитории данных.
+    await db.put('reviews', { id: 'r1', updatedAt: T1, bookId: 'b1', writtenOn: '2026-03', text: 'Отзыв' })
+    const text = JSON.stringify(await db.exportAll())
+
+    await db.close()
+    globalThis.indexedDB = new IDBFactory()
+
+    expect(await db.importAll(db.parseSnapshot(text))).toBe(1)
+    expect((await db.get('reviews', 'r1'))?.writtenOn).toBe('2026-03')
+  })
 })
 
 describe('настройки и служебное', () => {

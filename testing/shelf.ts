@@ -14,6 +14,7 @@
  * | `books`    | по месяцам, дата бывает null | заметки «Делу Время»: без даты — undated |
  * | `sessions` | по месяцам, дата обязательна | блоки времени, записи еды           |
  * | `quotes`   | одним файлом, с индексом   | обзоры недели «Делу Время»          |
+ * | `reviews`  | по годам, дата — день, месяц или null | контент «Дневников» (Я-09) |
  */
 
 import type { AppConfig, Base, Migration } from '../core/model.ts'
@@ -48,11 +49,23 @@ export type Quote = Base & {
   text: string
 }
 
+/**
+ * Отзыв о книге. Пишутся редко — лежат по годам (Я-09). Когда написан,
+ * бывает известно только до месяца; бывает неизвестно вовсе.
+ */
+export type Review = Base & {
+  bookId: string
+  /** YYYY-MM-DD или YYYY-MM; null — неизвестно */
+  writtenOn: string | null
+  text: string
+}
+
 export type ShelfStores = {
   shelves: Shelf
   books: Book
   sessions: Session
   quotes: Quote
+  reviews: Review
 }
 
 /** Конфиг «Полки» с заданными миграциями — для проверок версий схемы. */
@@ -64,13 +77,14 @@ export function shelfConfig(
     dbName: 'polka',
     schemaVersion: 1,
     migrations: [],
-    stores: ['shelves', 'books', 'sessions', 'quotes'],
-    v1Stores: ['shelves', 'books', 'sessions', 'quotes'],
+    stores: ['shelves', 'books', 'sessions', 'quotes', 'reviews'],
+    v1Stores: ['shelves', 'books', 'sessions', 'quotes', 'reviews'],
     indexes: {
       shelves: [],
       books: ['addedOn', 'finishedOn'],
       sessions: ['date'],
       quotes: ['bookId'],
+      reviews: [],
     },
     places: {
       shelves: { split: 'none', path: 'shelves.json' },
@@ -78,12 +92,14 @@ export function shelfConfig(
       books: { split: 'month', dir: 'books', dateOf: (book) => book.addedOn },
       sessions: { split: 'month', dir: 'sessions', dateOf: (session) => session.date },
       quotes: { split: 'none', path: 'quotes.json' },
+      reviews: { split: 'year', dir: 'reviews', dateOf: (review) => review.writtenOn },
     },
     storeNotes: {
       shelves: 'полки',
       books: 'книги — по месяцу, когда добавлены',
       sessions: 'сеансы чтения — по месяцу, когда читали',
       quotes: 'цитаты',
+      reviews: 'отзывы — по году, когда написаны',
     },
     importFormat: 'polka-import',
     promptRules: [
