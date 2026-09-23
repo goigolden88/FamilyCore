@@ -1,14 +1,17 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { nowIso, plural, today, type DateStr } from '../core/dates.ts'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { nowIso, today, type DateStr } from '../core/dates.ts'
 import type { StoreData } from '../core/db.ts'
 import { ulid } from '../core/id.ts'
-import { planTotal, type ImportContext, type ImportPlan, type Writes } from '../core/importing.ts'
+import { countsText, planTotal, type ImportContext, type ImportPlan, type Writes } from '../core/importing.ts'
 import type { StoreMap } from '../core/model.ts'
 import { useCore, type SharedDb } from '../ui/core.tsx'
 import { Fold } from '../ui/Fold.tsx'
 
 /** Сколько строк отчёта показывать. Остальные — числом. */
 const ISSUE_LINES = 20
+
+/** Разбор файла приложением: его разделы, его проверки (Я-03). */
+export type PlanImport<R extends StoreMap> = (text: string, data: StoreData<R>, context: ImportContext) => ImportPlan<R>
 
 function write(db: SharedDb, store: string, writes: Writes): Promise<unknown> {
   const records = writes[store]
@@ -24,13 +27,10 @@ function describe(error: unknown): string {
  *
  * Текстом или файлом. Текстом — главный путь на телефоне: ответ ИИ
  * приходит в чате, и сохранять его файлом ради загрузки неудобно.
- * Сначала сводка — что добавится, что уже есть, что не разобрано, —
- * запись только по кнопке.
+ * Сначала сводка — `ImportSummary`, — запись только по кнопке.
  *
  * Разбор разделов и промпт — приложения, из его `registry.ts`; `intro` —
- * его слова над полем: что сюда загружают (Я-03). Порядок записи — `stores`
- * конфига: справочники раньше записей, которые на них ссылаются, и прерванная
- * посередине запись оставит категорию без блоков, а не блок без категории.
+ * его слова над полем: что сюда загружают (Я-03).
  */
 export function ImportRecords<R extends StoreMap>({
   planImport,
@@ -38,55 +38,38 @@ export function ImportRecords<R extends StoreMap>({
   intro,
   onChanged,
 }: {
-  planImport: (text: string, data: StoreData<R>, context: ImportContext) => ImportPlan<R>
+  planImport: PlanImport<R>
   importPrompt: (day: DateStr) => string
   intro: ReactNode
   onChanged: () => Promise<void>
 }) {
-  const { config, db } = useCore()
+  const { config } = useCore()
   const input = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')
-  const [plan, setPlan] = useState<ImportPlan<R> | null>(null)
-  const [busy, setBusy] = useState(false)
+  // Номер разбора — ключ сводки: тот же текст, разобранный заново, —
+  // новая сводка по свежему слепку базы, а не прежняя.
+  const [source, setSource] = useState<{ text: string; round: number } | null>(null)
   const [note, setNote] = useState('')
-  const [error, setError] = useState('')
 
-  async function examine(source: string) {
+  function examine(value: string) {
     setNote('')
-    setError('')
-    setPlan(null)
-    try {
-      // Слепок базы приложения — той самой, чьи хранилища знает `planImport`.
-      const data = (await db.exportAll()).data as StoreData<R>
-      setPlan(planImport(source, data, { newId: ulid, now: nowIso() }))
-    } catch (failure) {
-      setError(describe(failure))
-    }
+    setSource((was) => ({ text: value, round: (was?.round ?? 0) + 1 }))
   }
 
-  async function apply() {
-    if (!plan) return
-    setBusy(true)
-    setError('')
-    try {
-      for (const store of config.stores) await write(db, store, plan.writes as Writes)
-      setNote(`Загружено записей: ${planTotal(plan)}`)
-      setPlan(null)
-      setText('')
-      await onChanged()
-    } catch (failure) {
-      setError(describe(failure))
-    } finally {
-      setBusy(false)
-    }
+  async function applied(plan: ImportPlan<R>) {
+    setNote(`Загружено записей: ${planTotal(plan)}`)
+    setSource(null)
+    setText('')
+    await onChanged()
   }
 
   return (
     <div className="import">
       {intro}
       <p className="muted">
-        Файл готовится по промпту ниже — например, с ИИ. Импорт только добавляет: то, что уже есть,
-        не перезаписывается, и повторная загрузка ничего не удвоит.
+        Файл готовится по промпту ниже — например, с ИИ. То, что уже есть, не удваивается: повторная загрузка
+        ничего не добавит дважды. До записи сводка покажет, что добавится, а если изменится что-то из уже
+        имеющегося — назовёт и это.
       </p>
 
       <textarea
@@ -98,7 +81,7 @@ export function ImportRecords<R extends StoreMap>({
       />
 
       <div className="row row--wrap">
-        <button type="button" className="btn" disabled={!text.trim()} onClick={() => void examine(text)}>
+        <button type="button" className="btn" disabled={!text.trim()} onClick={() => examine(text)}>
           Разобрать
         </button>
         <button type="button" className="btn" onClick={() => input.current?.click()}>
@@ -119,66 +102,170 @@ export function ImportRecords<R extends StoreMap>({
         }}
       />
 
-      {error && <p className="error">{error}</p>}
       {note && <p className="muted">{note}</p>}
 
-      {plan && <Plan plan={plan} busy={busy} onApply={() => void apply()} onCancel={() => setPlan(null)} />}
+      {source && (
+        <ImportSummary
+          key={source.round}
+          text={source.text}
+          planImport={planImport}
+          onApplied={applied}
+          onCancel={() => setSource(null)}
+        />
+      )}
 
       <Prompt prompt={importPrompt(today())} sources={config.about.sources} />
     </div>
   )
 }
 
-function Plan({
-  plan,
-  busy,
-  onApply,
+/**
+ * Сводка импорта по готовому тексту и запись по кнопке (Я-07).
+ *
+ * Одна на приложение: её ставит `ImportRecords`, и её же ставит приложение
+ * там, где файл импорта у него появился сам — ответ публичного источника,
+ * собранный скриптом перенос. Разбор — тот же `planImport`, что у экрана.
+ *
+ * Порядок записи — `stores` конфига: справочники раньше записей, которые
+ * на них ссылаются, и прерванная посередине запись оставит категорию без
+ * блоков, а не блок без категории.
+ *
+ * После записи сводка пропадает и отдаёт план в `onApplied`: что сказать
+ * человеку о записанном, решает место, где она стоит.
+ */
+export function ImportSummary<R extends StoreMap>({
+  text,
+  planImport,
+  onApplied,
   onCancel,
 }: {
-  plan: ImportPlan<StoreMap>
-  busy: boolean
-  onApply: () => void
+  text: string
+  planImport: PlanImport<R>
+  onApplied: (plan: ImportPlan<R>) => Promise<void> | void
   onCancel: () => void
 }) {
+  const { config, db } = useCore()
+  const [plan, setPlan] = useState<ImportPlan<R> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState('')
+
+  // Разбор — по тексту, а не по каждой новой функции разбора: приложение
+  // вправе передать её стрелкой прямо в разметке.
+  const parse = useRef(planImport)
+  parse.current = planImport
+
+  useEffect(() => {
+    let stale = false
+    setPlan(null)
+    setError('')
+    setDone(false)
+    void (async () => {
+      try {
+        // Слепок базы приложения — той самой, чьи хранилища знает `planImport`.
+        const data = (await db.exportAll()).data as StoreData<R>
+        const next = parse.current(text, data, { newId: ulid, now: nowIso() })
+        if (!stale) setPlan(next)
+      } catch (failure) {
+        if (!stale) setError(describe(failure))
+      }
+    })()
+    return () => {
+      stale = true
+    }
+  }, [db, text])
+
+  async function apply() {
+    if (!plan) return
+    setBusy(true)
+    setError('')
+    try {
+      for (const store of config.stores) await write(db, store, plan.writes as Writes)
+      setDone(true)
+      await onApplied(plan)
+    } catch (failure) {
+      setError(describe(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Записано; упасть могло только то, что приложение делает после записи.
+  if (done) return error ? <p className="error">{error}</p> : null
+
+  if (error && !plan) {
+    return (
+      <div className="form import__plan">
+        <p className="error">{error}</p>
+        <div className="row row--wrap">
+          <button type="button" className="btn" onClick={onCancel}>
+            Закрыть
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!plan) return <p className="muted">Разбираю…</p>
+
   const total = planTotal(plan)
-  const rest = plan.issues.length - ISSUE_LINES
+  const added = countsText(plan.added)
+  const changed = countsText(plan.changed ?? [])
+  const removed = countsText(plan.removed ?? [])
+  const notes = plan.notes ?? []
 
   return (
     <div className="form import__plan">
-      <p>
-        {total === 0
-          ? 'Добавлять нечего.'
-          : `Добавится: ${plan.added
-              .map((each) => `${each.count} ${plural(each.count, each.forms)}`)
-              .join(', ')}.`}
-      </p>
-      {plan.skipped > 0 && (
-        <p className="muted">Уже есть — пропущено, не перезаписано: {plan.skipped}.</p>
+      {total === 0 && <p>Добавлять нечего.</p>}
+      {added && <p>Добавится: {added}.</p>}
+      {changed && <p>Изменится: {changed}.</p>}
+      {removed && <p>Удалится: {removed}.</p>}
+      {/* Приложение не назвало, что это за записи, — число всё равно звучит. */}
+      {total > 0 && !added && !changed && !removed && <p>Запишется записей: {total}.</p>}
+      {plan.skipped > 0 && <p className="muted">Уже есть — пропущено, не перезаписано: {plan.skipped}.</p>}
+
+      {notes.length > 0 && (
+        <>
+          <p>Загрузится, но стоит посмотреть: {notes.length}.</p>
+          <Lines lines={notes.map((each) => `${each.title}: ${each.text}`)} />
+        </>
       )}
 
       {plan.issues.length > 0 && (
         <>
           <p className="error">Не разобрано — в базу не попадёт: {plan.issues.length}.</p>
-          <ul className="plain">
-            {plan.issues.slice(0, ISSUE_LINES).map((issue, index) => (
-              <li key={index} className="muted">
-                {issue.title}: {issue.reason}
-              </li>
-            ))}
-          </ul>
-          {rest > 0 && <p className="muted">и ещё {rest}</p>}
+          <Lines lines={plan.issues.map((each) => `${each.title}: ${each.reason}`)} />
         </>
       )}
 
+      {error && <p className="error">{error}</p>}
+
       <div className="row row--wrap">
-        <button type="button" className="btn btn--primary" disabled={total === 0 || busy} onClick={onApply}>
+        <button type="button" className="btn btn--primary" disabled={total === 0 || busy} onClick={() => void apply()}>
           Загрузить {total}
         </button>
-        <button type="button" className="btn" onClick={onCancel}>
+        <button type="button" className="btn" disabled={busy} onClick={onCancel}>
           Отмена
         </button>
       </div>
     </div>
+  )
+}
+
+/** Строки отчёта — первые `ISSUE_LINES`, остальные числом. */
+function Lines({ lines }: { lines: readonly string[] }) {
+  const rest = lines.length - ISSUE_LINES
+  return (
+    <>
+      <ul className="plain">
+        {lines.slice(0, ISSUE_LINES).map((line, index) => (
+          <li key={index} className="muted">
+            {line}
+          </li>
+        ))}
+      </ul>
+      {rest > 0 && <p className="muted">и ещё {rest}</p>}
+    </>
   )
 }
 

@@ -13,7 +13,7 @@
  * (Р-47 «Трапезы»): `createImporting(config)`.
  */
 
-import { formatDate, isDateOrMonth, isDateStr, type DateStr } from './dates.ts'
+import { formatDate, isDateOrMonth, isDateStr, plural, type DateStr } from './dates.ts'
 import type { AppConfig, StoreMap, StoreOf } from './model.ts'
 
 export const IMPORT_VERSION = 1
@@ -21,19 +21,43 @@ export const IMPORT_VERSION = 1
 /** Что не так с записью — по имени и с причиной. В базу она не попадает. */
 export type Issue = { section: string; title: string; reason: string }
 
-/** Записи к добавлению по хранилищам. */
+/**
+ * Запись в базу попадёт, но человеку стоит посмотреть (Я-07): округление,
+ * подозрительное число, замена одного другим. Не отказ — в счёт отказов
+ * не идёт.
+ */
+export type Note = { section: string; title: string; text: string }
+
+/** Записи к записи в базу по хранилищам: новые, изменённые и надгробия. */
 export type Writes<R extends StoreMap = StoreMap> = { [S in StoreOf<R>]?: R[S][] }
 
-/** Сколько чего добавится — число и склонение: «3 позиции». */
-export type Added = { count: number; forms: [string, string, string] }
+/** Сколько чего — число и склонение существительного: «3 позиции». */
+export type Count = { count: number; forms: [string, string, string] }
 
-/** Итог разбора раздела — и всего файла: у них одна форма. */
+/** Прежнее имя `Count` — приложения им пользуются. */
+export type Added = Count
+
+/**
+ * Итог разбора раздела — и всего файла: у них одна форма.
+ *
+ * Что в `writes` — новое, правка или надгробие, — говорит приложение
+ * счётом в `added`, `changed`, `removed`: ядро не сличает записи с базой
+ * и слов для чужих записей не знает (Я-07). Промолчит приложение о правке —
+ * промолчит и сводка.
+ */
 export type ImportPlan<R extends StoreMap = StoreMap> = {
   writes: Writes<R>
-  added: Added[]
+  added: Count[]
   /** Совпали с уже имеющимися — пропущены, а не перезаписаны. */
   skipped: number
+  /** Не попадут в базу. */
   issues: Issue[]
+  /** Попадут, но о них надо сказать (Я-07). */
+  notes?: Note[]
+  /** Сколько уже имеющихся записей изменится (Я-07). */
+  changed?: Count[]
+  /** Сколько уже имеющихся записей уйдёт надгробием (Я-07). */
+  removed?: Count[]
 }
 
 /** Откуда брать id и время. Снаружи — чтобы разбор проверялся тестами. */
@@ -186,30 +210,49 @@ function append<R extends StoreMap>(target: Writes<R>, source: Writes<R>, store:
   bag[store] = [...(bag[store] ?? []), ...records]
 }
 
-/** Разделы — в один план. Одинаковое добавленное складывается. */
+/** Счёт к счёту: одинаковое по склонению складывается. Входные не трогаются. */
+function addCounts(target: Count[], source: readonly Count[] | undefined): void {
+  for (const each of source ?? []) {
+    const same = target.find((other) => other.forms[2] === each.forms[2])
+    if (same) same.count += each.count
+    else target.push({ ...each })
+  }
+}
+
+/**
+ * Разделы — в один план. Одинаковое добавленное, изменённое и удалённое
+ * складывается. Необязательные поля в итоге есть всегда, пусть пустыми.
+ */
 export function mergeResults<R extends StoreMap>(results: readonly ImportPlan<R>[]): ImportPlan<R> {
   const writes: Writes<R> = {}
-  const added: Added[] = []
+  const added: Count[] = []
+  const changed: Count[] = []
+  const removed: Count[] = []
   let skipped = 0
   const issues: Issue[] = []
+  const notes: Note[] = []
 
   for (const result of results) {
     for (const store of Object.keys(result.writes) as StoreOf<R>[]) append(writes, result.writes, store)
-    for (const each of result.added) {
-      const same = added.find((other) => other.forms[2] === each.forms[2])
-      if (same) same.count += each.count
-      else added.push({ ...each })
-    }
+    addCounts(added, result.added)
+    addCounts(changed, result.changed)
+    addCounts(removed, result.removed)
     skipped += result.skipped
     issues.push(...result.issues)
+    notes.push(...(result.notes ?? []))
   }
 
-  return { writes, added, skipped, issues }
+  return { writes, added, skipped, issues, notes, changed, removed }
 }
 
-/** Сколько записей ляжет в базу. */
+/** Сколько записей ляжет в базу: новые, изменённые и надгробия вместе. */
 export function planTotal<R extends StoreMap>(plan: ImportPlan<R>): number {
   return Object.values(plan.writes).reduce((sum, records) => sum + (records?.length ?? 0), 0)
+}
+
+/** Счёт словами для сводки: «3 позиции, 1 категория». Пусто — пустая строка. */
+export function countsText(counts: readonly Count[]): string {
+  return counts.map((each) => `${each.count} ${plural(each.count, each.forms)}`).join(', ')
 }
 
 // ─── Промпт ────────────────────────────────────────────────────────────────

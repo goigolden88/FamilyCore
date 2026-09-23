@@ -297,7 +297,7 @@ describe('выборка по индексу — Я-08', () => {
   })
 
   it('индекса нет на устройстве — внятная ошибка с именами', async () => {
-    await expect(db.getByIndex('shelves', 'name', 'Чтение')).rejects.toThrow('у хранилища «shelves» нет индекса «name»')
+    await expect(db.getByIndex('shelves', 'name', 'Чтение')).rejects.toThrow('хранилища «shelves» нет индекса «name»')
   })
 })
 

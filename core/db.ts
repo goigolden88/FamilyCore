@@ -73,6 +73,22 @@ export type KeyValue = {
   keys(): Promise<string[]>
 }
 
+/**
+ * Что искать по индексу (Я-08): ключ — точное совпадение, диапазон — границы
+ * включительно, любая может не быть. `IDBKeyRange` наружу не выходит:
+ * к IndexedDB ходит только этот файл.
+ */
+export type IndexMatch = string | number | { from?: string | number; to?: string | number }
+
+function keyRange(match: IndexMatch): IDBKeyRange | undefined {
+  if (typeof match !== 'object') return IDBKeyRange.only(match)
+  const { from, to } = match
+  if (from !== undefined && to !== undefined) return IDBKeyRange.bound(from, to)
+  if (from !== undefined) return IDBKeyRange.lowerBound(from)
+  if (to !== undefined) return IDBKeyRange.upperBound(to)
+  return undefined
+}
+
 // ─── Обёртки над IDBRequest ────────────────────────────────────────────────
 
 function req<T>(request: IDBRequest<T>): Promise<T> {
@@ -345,6 +361,33 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
     const database = await open()
     const tx = database.transaction(store, 'readonly')
     const all = await req<R[S][]>(tx.objectStore(store).getAll())
+    return options.includeDeleted ? all : all.filter((record) => !record.deleted)
+  }
+
+  /**
+   * Записи, у которых поле индекса совпало с ключом или легло в диапазон,
+   * границы включительно (Я-08). Месяц истории — без чтения всех лет.
+   *
+   * Индекс ищется в базе на устройстве, а не в конфиге: индекс хранилища,
+   * заведённого миграцией, живёт только в её шаге. Записи без поля (`null`,
+   * не задано) в индекс не попадают — так устроен IndexedDB.
+   */
+  async function getByIndex<S extends S_>(
+    store: S,
+    index: string,
+    match: IndexMatch,
+    options: { includeDeleted?: boolean } = {},
+  ): Promise<R[S][]> {
+    const database = await open()
+    const tx = database.transaction(store, 'readonly')
+    const target = tx.objectStore(store)
+    if (!target.indexNames.contains(index)) {
+      throw new Error(
+        `У хранилища «${store}» нет индекса «${index}» на этом устройстве. ` +
+          'Индекс после первого релиза заводится шагом миграции (Я-08)',
+      )
+    }
+    const all = await req<R[S][]>(target.index(index).getAll(keyRange(match)))
     return options.includeDeleted ? all : all.filter((record) => !record.deleted)
   }
 
@@ -629,6 +672,7 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
   return {
     get,
     getAll,
+    getByIndex,
     count,
     put,
     putMany,
