@@ -146,6 +146,7 @@ export function shelfSummary(data: { sessions: Session[]; books: Book[] }, day: 
         count: data.books.filter((book) => book.addedOn === null).length,
         day,
         link: '/books',
+        basis: 'по датам добавления всех книг',
       },
     ],
   }

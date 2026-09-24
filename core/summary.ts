@@ -86,7 +86,7 @@ export type PeriodSummary = SummaryPeriod & {
 }
 
 /**
- * «Требует внимания» (Я-18): закончившийся день или состояние, с днём,
+ * «Требует внимания» (Я-18, Я-20): закончившийся день или состояние, с днём,
  * к которому относится. Текста темы нет — он несёт названия и диагнозы (Я-14).
  */
 export type Attention = {
@@ -97,6 +97,8 @@ export type Attention = {
   day: DateStr
   /** Путь хеш-роутинга приложения, как `FeedItem.link`. */
   link: string
+  /** Основание словами, как у показателя: `count` — тоже число (Я-20). */
+  basis: string
 }
 
 /** Что отдаёт функция среза приложения. Остальное ставит ядро. */
@@ -285,6 +287,7 @@ function checkAttention(attention: unknown, problems: string[]): void {
     }
     if (typeof item.day !== 'string' || !isDateStr(item.day)) problems.push(`${at}: day — не день`)
     if (typeof item.link !== 'string') problems.push(`${at}: link — не строка`)
+    if (!isText(item.basis)) problems.push(`${at}: нет основания`)
   })
 }
 

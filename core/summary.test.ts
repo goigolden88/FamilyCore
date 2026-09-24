@@ -99,7 +99,7 @@ describe('файл среза', () => {
   })
 })
 
-describe('проверка формы — Я-17', () => {
+describe('проверка формы — Я-17, Я-20', () => {
   it('годный срез «Полки» проходит; отрезок без записей — «не известно» с причиной', () => {
     const summary = checkSummary(good())
     expect(summary.periods[2]?.metrics).toEqual([
@@ -175,7 +175,7 @@ describe('проверка формы — Я-17', () => {
   })
 
   it('«требует внимания»: count — целое от нуля или null, day — день, ключи без повторов', () => {
-    const item = { key: 'k', label: 'Подпись', count: 2, day: DAY, link: '/x' }
+    const item = { key: 'k', label: 'Подпись', count: 2, day: DAY, link: '/x', basis: 'по записям' }
     expect(() => checkSummary(broken((s) => Object.assign(s, { attention: [{ ...item, count: null }] })))).not.toThrow()
     expect(() => checkSummary(broken((s) => Object.assign(s, { attention: [{ ...item, count: -1 }] })))).toThrow(
       'count',
@@ -184,6 +184,9 @@ describe('проверка формы — Я-17', () => {
       'day — не день',
     )
     expect(() => checkSummary(broken((s) => Object.assign(s, { attention: [item, item] })))).toThrow('повторяется')
+    expect(() => checkSummary(broken((s) => Object.assign(s, { attention: [{ ...item, basis: '' }] })))).toThrow(
+      'attention[0]: нет основания',
+    )
   })
 
   it('все расхождения — одной ошибкой, а не по одному за прогон', () => {
