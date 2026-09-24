@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { blobSha } from './github.ts'
-import { shelf, type Book, type Review, type Session, type ShelfStores } from '../testing/shelf.ts'
+import { shelf, shelfConfig, shelfSummary, type Book, type Review, type Session, type ShelfStores } from '../testing/shelf.ts'
 import type { StoreData } from './db.ts'
 import type { AppConfig } from './model.ts'
 import { canonical, createLayout, parseFile, README_PATH } from './layout.ts'
@@ -327,6 +327,18 @@ describe('годовая нарезка — Я-09', () => {
   })
 })
 
+describe('README и срез итогов — Я-16', () => {
+  it('у приложения со срезом README называет summary.json; storeOf его своим не считает', () => {
+    const layout = createLayout(shelfConfig({ summary: shelfSummary }))
+    expect(layout.readmeFile().content).toContain('| `summary.json` | срез итогов для метаприложения семьи')
+    expect(layout.storeOf('summary.json')).toBeNull()
+  })
+
+  it('у приложения без среза README о нём молчит', () => {
+    expect(readmeFile().content).not.toContain('summary.json')
+  })
+})
+
 describe('приложение без годовых мест — раскладка прежняя (Я-09)', () => {
   // Снято на ядре до годовой нарезки (98da218). Годовая нарезка — правка
   // договора и релиз на всех; у приложения с местами «одним файлом»
@@ -344,6 +356,8 @@ describe('приложение без годовых мест — расклад
     indexes,
     places,
     storeNotes,
+    // Срез знает хранилища «Полки» целиком; здесь его нет, как и до Я-16.
+    summary: undefined,
   }
   const layout = createLayout(withoutYear)
 

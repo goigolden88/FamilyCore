@@ -14,6 +14,10 @@
  * с d86f0aa, у них — из «Дневников» (Р-11 «Делу Время»).
  */
 
+import type { DateStr } from './dates.ts'
+import { SUMMARY_PATH } from './layout.ts'
+import type { SummaryBody } from './summary.ts'
+
 // ─── Общая часть ───────────────────────────────────────────────────────────
 
 /** Общая часть каждой записи семьи: ленты приложений сливаются без переделок. */
@@ -165,6 +169,14 @@ export type AppConfig<R extends StoreMap> = {
     /** Откуда данные для импорта: «таблицы учёта еды, списки блюд или скриншоты из других сервисов». */
     sources: string
   }
+  /**
+   * Срез итогов для метаприложения семьи (Я-16, Я-17): тело среза по живым
+   * записям синхронизируемых хранилищ — без надгробий — и дню расчёта.
+   * Чистая функция приложения: `settings` устройства ей не даются, иначе два
+   * устройства с одинаковыми данными писали бы разный срез (Я-16).
+   * Нет функции — нет `summary.json`: приложения переходят на срез по одному.
+   */
+  summary?: (data: { [S in StoreOf<R>]: R[S][] }, day: DateStr) => SummaryBody
 }
 
 /**
@@ -186,6 +198,10 @@ export function checkConfig<R extends StoreMap>(config: AppConfig<R>): void {
     if (!(store in config.storeNotes)) problems.push(`у «${store}» нет строки в storeNotes`)
     if ((LOCAL_STORES as readonly string[]).includes(store)) {
       problems.push(`«${store}» — имя локального хранилища ядра`)
+    }
+    const place = config.places[store] as Place<unknown> | undefined
+    if (place?.split === 'none' && place.path === SUMMARY_PATH) {
+      problems.push(`«${store}» лежит в ${SUMMARY_PATH} — это место среза итогов (Я-16)`)
     }
   }
   for (const store of config.v1Stores) {

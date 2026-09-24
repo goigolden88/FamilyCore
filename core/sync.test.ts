@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { GitHubError, blobSha } from './github.ts'
 import type { Client, FileToWrite } from './github.ts'
-import { shelf, type ShelfStores } from '../testing/shelf.ts'
+import { shelf, shelfConfig, shelfSummary, type ShelfStores } from '../testing/shelf.ts'
 import { createDb, type StoreData } from './db.ts'
 import { canonical, createLayout } from './layout.ts'
 import type { StoreOf } from './model.ts'
+import { SUMMARY_PATH, parseSummary } from './summary.ts'
 import { createSync, expiryDay, planUpload } from './sync.ts'
 import type { Ports, ShaByPath } from './sync.ts'
 
@@ -559,5 +560,103 @@ describe('README репозитория данных (Р-69 «Делу Врем�
 
     await runSync(repo.api, local.ports)
     expect(repo.files()['README.md']).toBe(readmeFile().content)
+  })
+})
+
+describe('срез итогов — Я-16', () => {
+  const DAY = '2026-09-24'
+  const withSummary = shelfConfig({ summary: shelfSummary })
+  const summarySync = createSync(withSummary, createDb(withSummary))
+  const seed = {
+    sessions: [mark('s1', '2026-09-22', '2026-09-22T10:00:00.000Z')],
+    books: [{ id: 'b1', updatedAt: '2026-09-01T10:00:00.000Z', title: 'Книга', addedOn: null }],
+  }
+
+  it('кладётся тем же коммитом, что и данные: день расчёта и «по записям по» ставит ядро', async () => {
+    const repo = fakeRepo(repoWith({}))
+    const local = fakeDb(seed)
+
+    const result = await summarySync.runSync(repo.api, local.ports, { day: DAY })
+
+    expect(result.summaryError).toBeNull()
+    const summary = parseSummary(repo.files()[SUMMARY_PATH] ?? '')
+    expect(summary.computedOn).toBe(DAY)
+    expect(summary.lastEdit).toBe('2026-09-22')
+    expect(summary.periods[1]?.metrics).toEqual([
+      { key: 'reading', label: 'Чтение', value: { n: 30, unit: 'minutes' }, basis: 'по 1 сеансам' },
+    ])
+    expect(repo.files()['sessions/2026-09.json']).toBeDefined()
+  })
+
+  it('функции среза даются живые записи; надгробие двигает только «по записям по»', async () => {
+    const repo = fakeRepo(repoWith({}))
+    const local = fakeDb({
+      sessions: [
+        mark('s1', '2026-09-22', '2026-09-22T10:00:00.000Z'),
+        { ...mark('s2', '2026-09-23', '2026-09-23T10:00:00.000Z'), deleted: true },
+      ],
+    })
+
+    await summarySync.runSync(repo.api, local.ports, { day: DAY })
+
+    const summary = parseSummary(repo.files()[SUMMARY_PATH] ?? '')
+    expect(summary.periods[1]?.metrics).toMatchObject([{ value: { n: 30 } }])
+    expect(summary.lastEdit).toBe('2026-09-23')
+  })
+
+  it('в тот же день тихий проход не коммитит; на следующий — один коммит, и только срез', async () => {
+    const repo = fakeRepo(repoWith({}))
+    const local = fakeDb(seed)
+    await summarySync.runSync(repo.api, local.ports, { day: DAY })
+
+    repo.calls.length = 0
+    const same = await summarySync.runSync(repo.api, local.ports, { day: DAY })
+    expect(same.pushed).toBe(0)
+    expect(repo.calls).toEqual(['head', 'tree'])
+
+    const next = await summarySync.runSync(repo.api, local.ports, { day: '2026-09-25' })
+    expect(next.pushed).toBe(1)
+    expect(repo.messages().at(-1)).toBe(`Полка: ${SUMMARY_PATH}`)
+  })
+
+  it('срез на сервере приложение не скачивает и не вливает', () => {
+    const plan = summarySync.planDownload({ [SUMMARY_PATH]: 'x', 'shelves.json': 'a' }, {})
+    expect(plan.download).toEqual(['shelves.json'])
+  })
+
+  it('упавшая функция среза не мешает данным: они уехали, среза нет, причина названа', async () => {
+    const failing = shelfConfig({
+      summary: () => {
+        throw new Error('сломалось')
+      },
+    })
+    const repo = fakeRepo(repoWith({}))
+    const local = fakeDb(seed)
+
+    const result = await createSync(failing, createDb(failing)).runSync(repo.api, local.ports, { day: DAY })
+
+    expect(result.summaryError).toBe('сломалось')
+    expect(repo.files()[SUMMARY_PATH]).toBeUndefined()
+    expect(repo.files()['sessions/2026-09.json']).toBeDefined()
+    expect(local.cleared.length).toBeGreaterThan(0)
+  })
+
+  it('кривая форма — то же: среза нет, данные уехали, расхождение названо', async () => {
+    const crooked = shelfConfig({ summary: (data, day) => ({ ...shelfSummary(data, day), periods: [] }) })
+    const repo = fakeRepo(repoWith({}))
+    const local = fakeDb(seed)
+
+    const result = await createSync(crooked, createDb(crooked)).runSync(repo.api, local.ports, { day: DAY })
+
+    expect(result.summaryError).toContain('отрезков должно быть 4')
+    expect(repo.files()[SUMMARY_PATH]).toBeUndefined()
+    expect(repo.files()['sessions/2026-09.json']).toBeDefined()
+  })
+
+  it('без функции среза файла нет', async () => {
+    const repo = fakeRepo(repoWith({}))
+    const result = await runSync(repo.api, fakeDb(seed).ports, { day: DAY })
+    expect(result.summaryError).toBeNull()
+    expect(repo.files()[SUMMARY_PATH]).toBeUndefined()
   })
 })

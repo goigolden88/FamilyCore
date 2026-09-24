@@ -17,7 +17,9 @@
  * | `reviews`  | по годам, дата — день, месяц или null | контент «Дневников» (Я-09) |
  */
 
+import { inPeriod } from '../core/dates.ts'
 import type { AppConfig, Base, Migration } from '../core/model.ts'
+import { summaryPeriods, type SummaryBody } from '../core/summary.ts'
 
 /** Полка: «Читаю», «Прочитано». Справочник. */
 export type Shelf = Base & {
@@ -117,3 +119,34 @@ export function shelfConfig(
 }
 
 export const shelf = shelfConfig()
+
+/**
+ * Срез итогов «Полки» (Я-16, Я-17) — образец функции среза: минуты чтения
+ * по отрезкам с основанием и одна тема «требует внимания» — книги без даты.
+ * Идущий отрезок неокончателен: число верно по день расчёта.
+ */
+export function shelfSummary(data: { sessions: Session[]; books: Book[] }, day: string): SummaryBody {
+  return {
+    periods: summaryPeriods(day).map((period) => {
+      const sessions = data.sessions.filter((session) => inPeriod(session.date, period))
+      const minutes = sessions.reduce((sum, session) => sum + session.minutes, 0)
+      return {
+        ...period,
+        through: period.to >= day ? day : null,
+        metrics:
+          sessions.length === 0
+            ? { unknown: 'no-data', text: 'сеансов чтения нет' }
+            : [{ key: 'reading', label: 'Чтение', value: { n: minutes, unit: 'minutes' }, basis: `по ${sessions.length} сеансам` }],
+      }
+    }),
+    attention: [
+      {
+        key: 'undated-books',
+        label: 'Книги без даты',
+        count: data.books.filter((book) => book.addedOn === null).length,
+        day,
+        link: '/books',
+      },
+    ],
+  }
+}

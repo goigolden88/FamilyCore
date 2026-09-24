@@ -11,7 +11,8 @@
  *   2. Скачиваем только те наши файлы, чей отпечаток разошёлся с запомненным
  *   3. Вливаем их в базу по правилу Р-07 «Дневников»: по `id` побеждает поздний `updatedAt`
  *   4. Пересобираем дерево из базы целиком (Р-33 «Дневников»)
- *   5. Отправляем одним коммитом только разошедшиеся файлы (Р-32 «Дневников»)
+ *   5. Отправляем одним коммитом только разошедшиеся файлы (Р-32 «Дневников»);
+ *      срез итогов `summary.json` едет тем же коммитом, если разошёлся (Я-16)
  *   6. Ветка ушла вперёд — перечитываем и сливаемся заново: три попытки
  *      с паузой, потом повтор через минуту (Р-62 «Дневников»)
  *
@@ -25,7 +26,7 @@
  * и имя в сообщениях коммитов приходят конфигом, база — аргументом.
  */
 
-import { isDateStr, nowIso } from './dates.ts'
+import { isDateStr, nowIso, today } from './dates.ts'
 import type { DateStr } from './dates.ts'
 import type { Db, DirtyRef, StoreData } from './db.ts'
 import { GitHubError, blobSha, createClient, parseRepo } from './github.ts'
@@ -33,6 +34,7 @@ import type { Client, RepoInfo } from './github.ts'
 import { META_PATH, README_PATH, createLayout, parseFile } from './layout.ts'
 import type { RepoFile } from './layout.ts'
 import type { AppConfig, StoreMap, StoreOf } from './model.ts'
+import { buildSummary, checkSummary, summaryFile } from './summary.ts'
 
 // ─── Настройки ─────────────────────────────────────────────────────────────
 
@@ -141,6 +143,11 @@ export type SyncResult = {
   /** Файлов отправлено. Ноль — коммита не было. */
   pushed: number
   commit: string | null
+  /**
+   * Почему срез итогов не положен: функция приложения упала или отдала
+   * не ту форму. null — положен, не разошёлся или приложение среза не пишет.
+   */
+  summaryError: string | null
 }
 
 /**
@@ -275,7 +282,7 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
   async function runSync(
     api: Client,
     ports: Ports<R>,
-    options: { pause?: (attempt: number) => Promise<void> } = {},
+    options: { pause?: (attempt: number) => Promise<void>; day?: DateStr } = {},
   ): Promise<SyncResult> {
     const pause = options.pause ?? backoff
     // Снято до начала: правки, сделанные во время прохода, останутся грязными
@@ -284,7 +291,7 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
 
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await onePass(api, ports, dirtyAtStart)
+        return await onePass(api, ports, dirtyAtStart, options.day ?? today())
       } catch (error) {
         const race = error instanceof GitHubError && error.conflict
         if (!race || attempt >= ATTEMPTS) throw error
@@ -299,6 +306,7 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
     api: Client,
     ports: Ports<R>,
     dirtyAtStart: readonly DirtyRef<R>[],
+    day: DateStr,
   ): Promise<SyncResult> {
     // Пустой репозиторий Git Data API не обслуживает: ему нужен хотя бы один
     // коммит. Кладём первый файл другим путём — дальше всё обычно.
@@ -329,9 +337,13 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
     }
 
     // ── Своё наружу ──
-    const files = layout.buildFiles(await ports.readAll(), { merged })
+    const data = await ports.readAll()
+    const files = layout.buildFiles(data, { merged })
     // README — только если его нет: есть — он человека (Р-69 «Делу Время»).
     if (tree[README_PATH] === undefined) files.push(layout.readmeFile())
+    const summary = summaryOf(data, day)
+    if (summary.file) files.push(summary.file)
+    const summaryError = summary.error
     const upload = await planUpload(files, tree)
 
     if (upload.files.length === 0) {
@@ -339,7 +351,7 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
       // снимаются — их содержимое доехало, пусть и не этим проходом.
       await ports.remember({ ...tree, ...upload.shas }, head)
       await ports.clearDirty(dirtyAtStart)
-      return { pulled, pushed: 0, commit: head }
+      return { pulled, pushed: 0, commit: head, summaryError }
     }
 
     const commit = await api.commit({
@@ -352,7 +364,29 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
     await ports.remember({ ...tree, ...upload.shas }, commit)
     await ports.clearDirty(dirtyAtStart)
 
-    return { pulled, pushed: upload.files.length, commit }
+    return { pulled, pushed: upload.files.length, commit, summaryError }
+  }
+
+  /**
+   * Срез итогов (Я-16): тело считает приложение по живым записям и дню,
+   * форму, день и свежесть ставит ядро.
+   *
+   * Срез не главное, данные — главное: упавшая функция или кривая форма
+   * оставляют проход без среза, но не без синхронизации. Прежний срез
+   * на сервере остаётся — с прежним днём расчёта, то есть честно несвежим.
+   */
+  function summaryOf(data: StoreData<R>, day: DateStr): { file: RepoFile | null; error: string | null } {
+    if (!config.summary) return { file: null, error: null }
+    try {
+      const live = {} as StoreData<R>
+      for (const store of config.stores) {
+        Object.assign(live, { [store]: data[store].filter((record) => !record.deleted) })
+      }
+      const summary = checkSummary(buildSummary(config.summary(live, day), data, day))
+      return { file: summaryFile(summary), error: null }
+    } catch (error) {
+      return { file: null, error: error instanceof Error ? error.message : 'Неизвестная ошибка' }
+    }
   }
 
   /**
@@ -472,6 +506,9 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
     return status
   }
 
+  /** Последняя ошибка среза, уже сказанная журналу. */
+  let lastSummaryError: string | null = null
+
   /** Идущий проход. Второй вызов подхватывает первый, а не запускает второй. */
   let running: Promise<SyncResult | null> | null = null
 
@@ -503,6 +540,13 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
       try {
         const api = client(current)
         const result = await runSync(api, realPorts())
+        // В журнал ошибок устройства (`listenErrors`), а не в состояние
+        // синхронизации: данные уехали, красная точка соврала бы. Одна и та же
+        // ошибка — один раз: иначе каждый проход вытеснял бы из журнала остальные.
+        if (result.summaryError && result.summaryError !== lastSummaryError) {
+          reportError(new Error(`Срез итогов не положен: ${result.summaryError}`))
+        }
+        lastSummaryError = result.summaryError
 
         // Срок жизни токена приезжает заголовком ответа. Не приехал — значит
         // браузеру его читать не разрешили; тогда дата остаётся той, что

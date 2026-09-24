@@ -660,6 +660,11 @@ describe('конфиг приложения — Р-47 «Трапезы»', () =>
     expect(() => checkConfig(shelf)).not.toThrow()
   })
 
+  it('хранилище не может лежать в summary.json — это место среза итогов (Я-16)', () => {
+    const places = { ...shelf.places, quotes: { split: 'none' as const, path: 'summary.json' } }
+    expect(() => checkConfig(shelfConfig({ places }))).toThrow('«quotes» лежит в summary.json')
+  })
+
   it('хранилище без места, строки индексов или README — отказ до первой записи', () => {
     const broken = { ...shelf, stores: [...shelf.stores, 'loans'] } as unknown as typeof shelf
     expect(() => checkConfig(broken)).toThrow('«loans» нет места в places')

@@ -25,6 +25,13 @@
 import { isDateOrMonth } from './dates.ts'
 import type { AppConfig, Base, Place, StoreMap, StoreOf } from './model.ts'
 
+/**
+ * Срез итогов (Я-16): пишет проход синхронизации, `storeOf` его не знает —
+ * приложение срез не читает. Здесь, рядом с остальными путями, а не
+ * в `summary.ts`: тот сам берёт отсюда канонический вид.
+ */
+export const SUMMARY_PATH = 'summary.json'
+
 export type RepoFile = {
   path: string
   content: string
@@ -67,7 +74,7 @@ const UNDATED = 'undated'
  *
  * Массивы не трогаются: порядок симптомов и ссылок — это данные.
  */
-function sortKeys(value: unknown): unknown {
+export function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys)
   if (typeof value !== 'object' || value === null) return value
 
@@ -222,6 +229,11 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
         rows.push(`| \`${place.dir}/${name}.json\` | ${config.storeNotes[store]} |`)
         rows.push(`| \`${place.dir}/${UNDATED}.json\` | те же записи без разбираемой даты |`)
       }
+    }
+    // Строка среза — только у приложения, которое его пишет: README
+    // остальных не меняется ни на байт.
+    if (config.summary) {
+      rows.push(`| \`${SUMMARY_PATH}\` | срез итогов для метаприложения семьи: считает приложение, само его не читает |`)
     }
     return rows
   }
