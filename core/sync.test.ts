@@ -416,6 +416,56 @@ describe('порядок «сначала чужое, потом своё»', ()
     expect(repo.calls).not.toContain('commit')
   })
 
+  it('репозиторий другого приложения семьи не трогается вовсе — Я-24', async () => {
+    const theirs = repoWith({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
+    const repo = fakeRepo({
+      ...theirs,
+      'meta.json': `${JSON.stringify({ app: 'sosed', schemaVersion: SCHEMA_VERSION }, null, 2)}\n`,
+    })
+    const local = fakeDb({ shelves: [item('i2', '2026-09-02T10:00:00.000Z')] })
+
+    await expect(runSync(repo.api, local.ports)).rejects.toThrow('другого приложения семьи (sosed)')
+    expect(repo.calls).not.toContain('commit')
+    // Совпавшее по имени хранилище соседа не влито как своё.
+    expect(local.data.shelves.map((record) => record.id)).toEqual(['i2'])
+    expect(repo.files()['shelves.json']).toBe(theirs['shelves.json'])
+  })
+
+  it('чужой meta.json проверяется, даже если его отпечаток запомнен — Я-24', async () => {
+    // Запомненное дерево при смене имени репозитория не сбрасывается, а давний
+    // meta.json одной версии у двух приложений побайтно одинаков.
+    const foreign = `${JSON.stringify({ app: 'sosed', schemaVersion: SCHEMA_VERSION }, null, 2)}\n`
+    const repo = fakeRepo({ ...repoWith({}), 'meta.json': foreign })
+    const local = fakeDb()
+    await local.ports.remember({ 'meta.json': await blobSha(foreign) }, 'commit0')
+
+    await expect(runSync(repo.api, local.ports)).rejects.toThrow('другого приложения')
+    expect(repo.calls).not.toContain('commit')
+  })
+
+  it('давний meta.json без имени принимается, имя дописывается тем же проходом — Я-24', async () => {
+    const repo = fakeRepo({
+      ...repoWith({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }),
+      'meta.json': `${JSON.stringify({ schemaVersion: SCHEMA_VERSION }, null, 2)}\n`,
+    })
+    const local = fakeDb()
+
+    const result = await runSync(repo.api, local.ports)
+
+    expect(result.pulled).toBe(1)
+    expect(JSON.parse(repo.files()['meta.json'] ?? '{}')).toEqual({ app: 'polka', schemaVersion: SCHEMA_VERSION })
+  })
+
+  it('свой meta.json не скачивается: отпечаток совпал с тем, что положили бы мы', async () => {
+    const own = repoWith({})
+    const repo = fakeRepo({ 'meta.json': own['meta.json'] ?? '' })
+    const local = fakeDb()
+
+    await runSync(repo.api, local.ports)
+
+    expect(repo.calls).not.toContain('blob')
+  })
+
   it('пометки не снимаются, если проход не дошёл до конца', async () => {
     const repo = fakeRepo({ ...repoWith({}), 'shelves.json': 'не json' })
     const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })

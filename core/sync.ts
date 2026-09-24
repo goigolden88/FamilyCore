@@ -320,10 +320,16 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
     const { download, merged } = planDownload(tree, remembered)
 
     // ── Чужое к себе ──
-    // Версия схемы проверяется первой: файл более новой версии читать нельзя,
-    // а испортить базу попыткой — можно.
-    if (download.includes(META_PATH)) {
-      const version = layout.parseMeta(await api.blob(tree[META_PATH] as string))
+    // `meta.json` проверяется первым: чей репозиторий и какой версии. Файл
+    // более новой версии читать нельзя, а испортить базу попыткой — можно;
+    // файлы другого приложения влились бы как свои (Я-24).
+    //
+    // Не по запомненному отпечатку, а по своему: запомненное дерево при смене
+    // имени репозитория остаётся прежним, а давний `meta.json` одной версии
+    // у двух приложений побайтно одинаков. Лежит ровно наш — проверять нечего.
+    const remoteMeta = tree[META_PATH]
+    if (remoteMeta !== undefined && remoteMeta !== (await blobSha(layout.metaFile().content))) {
+      const version = layout.parseMeta(await api.blob(remoteMeta))
       checkRemoteVersion(version)
     }
 

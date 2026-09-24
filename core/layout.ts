@@ -37,7 +37,10 @@ export type RepoFile = {
   content: string
 }
 
-/** Версия схемы лежит отдельным файлом — по ней проверяется совместимость. */
+/**
+ * Чей репозиторий и какой версии схемы — отдельным файлом: по нему проверяется
+ * совместимость и то, что репозиторий — этого приложения (Я-24).
+ */
 export const META_PATH = 'meta.json'
 
 /**
@@ -90,8 +93,9 @@ export function canonical(records: readonly Base[]): string {
   return `${JSON.stringify(ordered.map(sortKeys), null, 2)}\n`
 }
 
-export function metaFile(schemaVersion: number): RepoFile {
-  return { path: META_PATH, content: `${JSON.stringify({ schemaVersion }, null, 2)}\n` }
+/** `meta.json`: `app` — `dbName` приложения (Я-24); ключи по алфавиту, как у файлов хранилищ. */
+export function metaFile(app: string, schemaVersion: number): RepoFile {
+  return { path: META_PATH, content: `${JSON.stringify({ app, schemaVersion }, null, 2)}\n` }
 }
 
 /**
@@ -198,7 +202,7 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
     data: { [S in S_]: readonly R[S][] },
     options: { schemaVersion?: number; merged?: readonly string[] } = {},
   ): RepoFile[] {
-    const files: RepoFile[] = [metaFile(options.schemaVersion ?? config.schemaVersion)]
+    const files: RepoFile[] = [metaFile(config.dbName, options.schemaVersion ?? config.schemaVersion)]
 
     for (const store of config.stores) {
       files.push(...filesFor(store, data[store]))
@@ -219,7 +223,7 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
 
   /** Таблица файлов — из раскладки, поэтому с ней не разойдётся. */
   function readmeRows(): string[] {
-    const rows = [`| \`${META_PATH}\` | версия схемы данных |`]
+    const rows = [`| \`${META_PATH}\` | чьи данные и версия схемы |`]
     for (const store of config.stores) {
       const place = placeOf(store)
       if (place.split === 'none') {
@@ -327,7 +331,13 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
     return null
   }
 
-  /** Версия схемы из `meta.json`. Файла нет — репозиторий пуст, версия наша. */
+  /**
+   * Версия схемы из `meta.json`. Файла нет — репозиторий пуст, версия наша.
+   *
+   * Чужой `app` — репозиторий данных другого приложения семьи: с общим токеном
+   * (Я-25) перепутанное имя репозитория больше не упирается в 404. Давний файл
+   * без `app` принимается — имя допишет тот же проход (Я-24).
+   */
   function parseMeta(text: string): number {
     let value: unknown
     try {
@@ -339,6 +349,14 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
     if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
       throw new Error(`В meta.json нет версии схемы. Это не репозиторий приложения «${config.name}»`)
     }
+    const app = (value as { app?: unknown }).app
+    if (app !== undefined && app !== config.dbName) {
+      throw new Error(
+        `Репозиторий — данные другого приложения семьи (${String(app)}), а это приложение ` +
+          `«${config.name}» (${config.dbName}). Ничего не скачано и не отправлено. ` +
+          'Проверь имя репозитория в настройках синхронизации.',
+      )
+    }
     return version
   }
 
@@ -347,8 +365,8 @@ export function createLayout<R extends StoreMap>(config: AppConfig<R>) {
     readmeFile,
     storeOf,
     parseMeta,
-    /** `meta.json`; без версии — текущей схемы приложения. */
-    metaFile: (schemaVersion: number = config.schemaVersion): RepoFile => metaFile(schemaVersion),
+    /** `meta.json` приложения; без версии — текущей схемы. */
+    metaFile: (schemaVersion: number = config.schemaVersion): RepoFile => metaFile(config.dbName, schemaVersion),
   }
 }
 

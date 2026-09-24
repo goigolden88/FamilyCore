@@ -37,7 +37,11 @@ export type Grain = 'week' | 'month'
 /** Отрезок среза: зерно и явные концы (Я-12). */
 export type SummaryPeriod = Period & { grain: Grain }
 
-/** Единицы чисел. Метаприложение по ним форматирует, а не пересчитывает. */
+/**
+ * Единицы чисел. Метаприложение по ним форматирует, а не пересчитывает.
+ * `share` — доля, 1 — целое: `0.25` — четверть, не проценты; отрезком 0…1
+ * не ограничена — доля сбережений бывает отрицательной (Я-26).
+ */
 export const UNITS = ['count', 'minutes', 'days', 'kcal', 'km', 'share'] as const
 export type Unit = (typeof UNITS)[number]
 

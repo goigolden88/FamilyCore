@@ -96,6 +96,11 @@ describe('раскладка', () => {
     const meta = buildFiles(empty()).find((file) => file.path === 'meta.json')
     expect(parseMeta(meta?.content ?? '')).toBe(SCHEMA_VERSION)
   })
+
+  it('meta.json называет приложение его dbName — Я-24', () => {
+    const meta = buildFiles(empty()).find((file) => file.path === 'meta.json')
+    expect(JSON.parse(meta?.content ?? '{}')).toEqual({ app: 'polka', schemaVersion: SCHEMA_VERSION })
+  })
 })
 
 describe('опустевший месяц', () => {
@@ -205,6 +210,15 @@ describe('разбор файлов с сервера', () => {
     expect(() => parseMeta('{}')).toThrow('не репозиторий приложения «Полка»')
     expect(() => parseMeta('{"schemaVersion":"1"}')).toThrow('не репозиторий приложения «Полка»')
     expect(() => parseMeta('нет')).toThrow('не JSON')
+  })
+
+  it('meta.json другого приложения — не наш репозиторий, давний без имени — наш', () => {
+    expect(parseMeta('{"app":"polka","schemaVersion":1}')).toBe(1)
+    expect(parseMeta('{"schemaVersion":1}')).toBe(1)
+    expect(() => parseMeta('{"app":"sosed","schemaVersion":1}')).toThrow(
+      'данные другого приложения семьи (sosed), а это приложение «Полка» (polka)',
+    )
+    expect(() => parseMeta('{"app":7,"schemaVersion":1}')).toThrow('другого приложения')
   })
 
   it('свой же файл читается обратно', () => {
@@ -419,6 +433,7 @@ describe('приложение без годовых мест — расклад
         },
         {
           "content": "{
+        "app": "polka",
         "schemaVersion": 1
       }
       ",
@@ -493,7 +508,7 @@ describe('приложение без годовых мест — расклад
 
       | Файл | Что внутри |
       |---|---|
-      | \`meta.json\` | версия схемы данных |
+      | \`meta.json\` | чьи данные и версия схемы |
       | \`shelves.json\` | полки |
       | \`books/ГГГГ-ММ.json\` | книги — по месяцу, когда добавлены |
       | \`books/undated.json\` | те же записи без разбираемой даты |
