@@ -111,7 +111,7 @@ describe('blobSha', () => {
 })
 
 describe('info', () => {
-  it('видит право на запись и приватность', async () => {
+  it('видит право аккаунта на запись и приватность', async () => {
     const { api, calls } = client({
       '/repos/': {
         body: {
@@ -132,7 +132,8 @@ describe('info', () => {
     expect(calls[0]?.headers.Authorization).toBe('Bearer ghp_secret')
   })
 
-  it('читающий токен виден сразу, а не при первой отправке', async () => {
+  // Токен Read-only у владельца здесь не виден: права токена GitHub не сообщает (Я-28).
+  it('аккаунт без права записи — canWrite false', async () => {
     const { api } = client({
       '/repos/': {
         body: {

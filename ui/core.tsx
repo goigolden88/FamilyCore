@@ -51,7 +51,8 @@ export type SharedConfig = Pick<AppConfig<StoreMap>, 'name' | 'schemaVersion' | 
 export type Core = {
   config: SharedConfig
   db: SharedDb
-  sync: Sync
+  /** Нет — у приложения нет синхронизации (метаприложение, Я-23): состояние «выключено» (Я-29). */
+  sync?: Sync
 }
 
 const CoreContext = createContext<Core | null>(null)
@@ -70,4 +71,18 @@ export function useCore(): Core {
     throw new Error('Общий интерфейс ядра вызван вне <CoreProvider>: оберни дерево приложения в app.tsx')
   }
   return core
+}
+
+/**
+ * Синхронизация для того, без чего она не имеет смысла, — «Настроек
+ * синхронизации». Нет её — ошибка кода приложения, а не пустые поля (Я-29).
+ */
+export function syncOf(core: Core): Sync {
+  if (!core.sync) {
+    throw new Error(
+      'Настройки синхронизации поставлены в приложение без синхронизации: ' +
+        'sync не передан в <CoreProvider> — убери их с экрана или передай sync',
+    )
+  }
+  return core.sync
 }

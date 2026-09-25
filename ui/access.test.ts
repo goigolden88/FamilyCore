@@ -20,14 +20,14 @@ describe('accessWords — «Проверить доступ» (Я-28)', () => {
   it('право аккаунта не выдаётся за право токена', () => {
     const { note, error } = accessWords(info, 'main')
     expect(note).not.toContain('запись разрешена')
-    expect(note).toContain('права токена GitHub не сообщает')
+    expect(note).toMatch(/права токена GitHub не сообщает/i)
     expect(note).toContain('Contents: Read and write')
     expect(error).toBe('')
   })
 
   it('аккаунту писать нельзя — ошибка, и это правда', () => {
     const { note, error } = accessWords({ ...info, canWrite: false }, 'main')
-    expect(note).not.toContain('права токена GitHub не сообщает')
+    expect(note).not.toMatch(/права токена GitHub не сообщает/i)
     expect(error).toContain('писать в этот репозиторий нельзя')
   })
 

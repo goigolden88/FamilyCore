@@ -42,7 +42,12 @@ export type RepoRef = {
 export type RepoInfo = {
   fullName: string
   private: boolean
-  /** Есть ли у токена право писать. Читающий токен виден сразу, а не при первой отправке. */
+  /**
+   * Может ли писать **аккаунт**, выпустивший токен: `permissions.push` ответа
+   * GitHub. Права fine-grained токена GitHub здесь не сообщает (Я-28; Р-12
+   * «Тотального Учёта»): у владельца репозитория — всегда true, и у токена
+   * Read-only тоже. false — не пишет точно; true о токене не говорит ничего.
+   */
   canWrite: boolean
   defaultBranch: string
 }
@@ -240,7 +245,7 @@ export function createClient({ repo, token, fetch = globalThis.fetch }: ClientOp
      */
     tokenExpiry: () => tokenExpiry,
 
-    /** Проверка доступа: репозиторий существует, токен его видит, писать разрешено. */
+    /** Проверка доступа: репозиторий существует, токен его видит; может ли писать аккаунт (Я-28). */
     async info(): Promise<RepoInfo> {
       const raw = await call<{
         full_name: string

@@ -10,7 +10,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { days, daysBetween, formatDate, isDateStr, timeSpan, today } from '../core/dates.ts'
 import { checkAccess, expiryDay, RETRY_MS } from '../core/sync.ts'
 import type { SyncConfig, SyncStatus } from '../core/sync.ts'
-import { useCore } from './core.tsx'
+import { accessWords } from './access.ts'
+import { syncOf, useCore } from './core.tsx'
 import { Fold } from './Fold.tsx'
 import { useSyncStatus } from './useSync.ts'
 
@@ -53,7 +54,7 @@ function tokenAlarm(config: SyncConfig | null): string | null {
 }
 
 export function SyncSettings({ onChanged }: { onChanged: () => Promise<void> }) {
-  const { readConfig, saveConfig, syncNow, getStatus } = useCore().sync
+  const { readConfig, saveConfig, syncNow, getStatus } = syncOf(useCore())
   const status = useSyncStatus()
   const [config, setConfig] = useState<SyncConfig | null>(null)
   const [busy, setBusy] = useState(false)
@@ -108,21 +109,10 @@ export function SyncSettings({ onChanged }: { onChanged: () => Promise<void> }) 
       const access = await checkAccess(fresh)
       if (access.tokenExpiry) await patch({ tokenExpires: access.tokenExpiry })
 
-      const parts = [
-        `Репозиторий ${access.fullName} найден`,
-        access.private ? 'приватный' : 'ПУБЛИЧНЫЙ — данные увидят все',
-        access.canWrite ? 'запись разрешена' : 'запись ЗАПРЕЩЕНА',
-      ]
-      if (access.defaultBranch !== fresh.branch) {
-        parts.push(`ветка по умолчанию — ${access.defaultBranch}`)
-      }
-      setNote(`${parts.join(', ')}.`)
-      if (!access.canWrite) {
-        setError(
-          'Токену не хватает права «Contents: Read and write». ' +
-            'Перевыпусти его с этим правом, иначе отправлять будет нечем.',
-        )
-      }
+      // Права токена GitHub не сообщает — «можно писать» не обещается (Я-28).
+      const words = accessWords(access, fresh.branch)
+      setNote(words.note)
+      if (words.error) setError(words.error)
     } catch (failure) {
       setError(describe(failure))
     } finally {
@@ -281,7 +271,7 @@ function TokenField({
   config: SyncConfig
   onSave: (token: string) => Promise<void>
 }) {
-  const { forgetToken } = useCore().sync
+  const { forgetToken } = syncOf(useCore())
   const [editing, setEditing] = useState(config.token === '')
   const [value, setValue] = useState('')
 
