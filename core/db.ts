@@ -176,6 +176,191 @@ async function persisted(): Promise<boolean | null> {
   }
 }
 
+// ─── Общая база семьи ──────────────────────────────────────────────────────
+
+/**
+ * Имя общей базы ядра на origin (Я-35). Не приложения: в договоре,
+ * «Устройство и origin», имя занято.
+ */
+export const FAMILY_DB = 'family'
+
+/** Что лежит в общей базе: одно на все приложения семьи устройства. */
+export type Family = {
+  /** Токен «семья». null — на этом устройстве не вписан. */
+  token: string | null
+  /** Когда истекает: заголовок GitHub или день руками. null — неизвестно. */
+  expires: string | null
+  /** Имена репозиториев данных по `dbName` приложения: `владелец/имя`. */
+  repos: Record<string, string>
+}
+
+type FamilyStores = { token: IDBObjectStore; repos: IDBObjectStore }
+
+/**
+ * Открывает общую базу на одно действие.
+ *
+ * Без номера версии (Я-40): старое ядро открывает базу, поднятую новым,
+ * и работает с тем, что знает. Номер у старого ядра на поднятой базе — это
+ * `VersionError`, то есть сосед ломается от обновления другого приложения.
+ * Поэтому дальше — только добавление хранилищ и ключей.
+ */
+function openFamily(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(FAMILY_DB)
+
+    // Сюда попадает только свежая база: без номера версия не поднимается.
+    request.onupgradeneeded = () => {
+      const database = request.result
+      database.createObjectStore('token', { keyPath: 'key' })
+      database.createObjectStore('repos', { keyPath: 'key' })
+    }
+
+    request.onsuccess = () => {
+      const database = request.result
+      database.onversionchange = () => database.close()
+      resolve(database)
+    }
+
+    request.onerror = () => reject(request.error ?? new Error('Общая база семьи не открылась'))
+    // `onblocked` — не ошибка: соседние соединения живут одно действие,
+    // запрос их дождётся.
+  })
+}
+
+/** Открыл — одна транзакция — закрыл (Я-35): долгого соединения нет. */
+async function inFamily<T>(
+  mode: IDBTransactionMode,
+  work: (stores: FamilyStores) => Promise<T>,
+): Promise<T> {
+  const database = await openFamily()
+  try {
+    const tx = database.transaction(['token', 'repos'], mode)
+    const done = finished(tx)
+    // Упавшая работа отменяет транзакцию — ошибка уйдёт от `work`, не отсюда.
+    done.catch(() => {})
+    const result = await work({ token: tx.objectStore('token'), repos: tx.objectStore('repos') })
+    await done
+    return result
+  } finally {
+    database.close()
+  }
+}
+
+async function valueOf(store: IDBObjectStore, key: string): Promise<string | null> {
+  const row = await req<{ key: string; value: unknown } | undefined>(store.get(key))
+  return typeof row?.value === 'string' && row.value !== '' ? row.value : null
+}
+
+/**
+ * Общая база семьи (Я-35, Я-37, Я-40…Я-42): токен «семья», его срок и имена
+ * репозиториев данных. Своего состояния нет: каждое действие читает базу.
+ *
+ * Синхронизация приложения (`createSync`) ходит сюда сама. Приложение без
+ * синхронизации — метаприложение (Я-29) — берёт отсюда токен для чтения
+ * срезов и пишет имена из своего списка в пустые места.
+ */
+export const family = {
+  async read(): Promise<Family> {
+    return inFamily('readonly', async ({ token, repos }) => {
+      const [value, expires, rows] = await Promise.all([
+        valueOf(token, 'token'),
+        valueOf(token, 'expires'),
+        req<{ key: string; value: unknown }[]>(repos.getAll()),
+      ])
+      const names: Record<string, string> = {}
+      for (const row of rows) {
+        if (typeof row.value === 'string' && row.value !== '') names[row.key] = row.value
+      }
+      return { token: value, expires, repos: names }
+    })
+  },
+
+  /**
+   * Новый токен — для всех приложений устройства. Срок прежнего стирается
+   * той же транзакцией (Я-42): у нового он другой, а до первого ответа
+   * GitHub неизвестен. Пустой — то же, что «Забыть».
+   */
+  async setToken(value: string): Promise<void> {
+    const trimmed = value.trim()
+    await inFamily('readwrite', async ({ token }) => {
+      if (trimmed === '') token.delete('token')
+      else token.put({ key: 'token', value: trimmed })
+      token.delete('expires')
+    })
+  },
+
+  async setExpires(value: string | null): Promise<void> {
+    await inFamily('readwrite', async ({ token }) => {
+      if (value) token.put({ key: 'expires', value })
+      else token.delete('expires')
+    })
+  },
+
+  /** Забыть токен — во всех приложениях семьи на этом устройстве (Я-41). Имена остаются. */
+  async forgetToken(): Promise<void> {
+    await inFamily('readwrite', async ({ token }) => {
+      token.delete('token')
+      token.delete('expires')
+    })
+  },
+
+  /**
+   * Имя репозитория данных приложения. Занятое место переписывается —
+   * это действие человека: своё имя на экране синхронизации или в «Семье»
+   * метаприложения (Я-37). Пустое — удалить.
+   */
+  async setRepo(dbName: string, repo: string): Promise<void> {
+    const trimmed = repo.trim()
+    await inFamily('readwrite', async ({ repos }) => {
+      if (trimmed === '') repos.delete(dbName)
+      else repos.put({ key: dbName, value: trimmed })
+    })
+  },
+
+  /**
+   * Имена из списка метаприложения — только в пустые места (Я-37): занятое
+   * вписал человек, и молча его не переписывают. Отдаёт, какие `dbName`
+   * записаны.
+   */
+  async fillRepos(names: Readonly<Record<string, string>>): Promise<string[]> {
+    return inFamily('readwrite', async ({ repos }) => {
+      const written: string[] = []
+      for (const [dbName, repo] of Object.entries(names)) {
+        const trimmed = repo.trim()
+        if (trimmed === '' || (await valueOf(repos, dbName)) !== null) continue
+        repos.put({ key: dbName, value: trimmed })
+        written.push(dbName)
+      }
+      return written
+    })
+  },
+
+  /**
+   * Переезд давних полей приложения (Я-35, Я-41): чего в общей нет — туда,
+   * что есть — остаётся. Одной транзакцией: два приложения, переезжающие
+   * разом, не затрут друг друга. Срок едет только вместе со своим токеном —
+   * к чужому он не относится. Зовёт `createSync`; удалить свои поля после —
+   * его дело.
+   */
+  async adopt(
+    dbName: string,
+    own: { token?: string | undefined; expires?: string | undefined; repo?: string | undefined },
+  ): Promise<void> {
+    const token = own.token?.trim() ?? ''
+    const repo = own.repo?.trim() ?? ''
+    await inFamily('readwrite', async (stores) => {
+      if (token !== '' && (await valueOf(stores.token, 'token')) === null) {
+        stores.token.put({ key: 'token', value: token })
+        if (own.expires) stores.token.put({ key: 'expires', value: own.expires })
+        else stores.token.delete('expires')
+      }
+      if (repo !== '' && (await valueOf(stores.repos, dbName)) === null) {
+        stores.repos.put({ key: dbName, value: repo })
+      }
+    })
+  },
+}
+
 // ─── База приложения ───────────────────────────────────────────────────────
 
 /**
@@ -341,7 +526,8 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
     }
 
     database.createObjectStore('meta', { keyPath: 'key' })
-    // Настройки не синхронизируются: здесь лежит токен доступа.
+    // Настройки не синхронизируются: здесь состояние устройства. Токен —
+    // в общей базе `family` (Я-35), до неё лежал здесь.
     database.createObjectStore('settings', { keyPath: 'key' })
     database.createObjectStore('dirty', { keyPath: ['store', 'id'] })
   }

@@ -28,6 +28,7 @@
 
 import { nowIso, today } from './dates.ts'
 import type { DateStr } from './dates.ts'
+import { family } from './db.ts'
 import type { Db, DirtyRef, StoreData } from './db.ts'
 import { GitHubError, blobSha, createClient, parseRepo } from './github.ts'
 import type { Client, RepoInfo } from './github.ts'
@@ -39,20 +40,29 @@ import { buildSummary, checkSummary, summaryFile } from './summary.ts'
 // ─── Настройки ─────────────────────────────────────────────────────────────
 
 /**
- * Ключи в хранилище `settings`. Не синхронизируются никогда: здесь токен,
- * и «когда я в последний раз синхронизировался» у каждого устройства своё.
+ * Ключи в хранилище `settings`. Не синхронизируются никогда: «включено»,
+ * ветка и «когда я в последний раз синхронизировался» у каждого приложения
+ * на каждом устройстве свои. Токен, его срок и имя репозитория — в общей
+ * базе `family` (Я-35): одни на все приложения устройства.
  */
 const KEYS = {
+  /** Нет — «включено» вычисляется из общей базы (Я-37, Я-42). */
   enabled: 'syncEnabled',
-  repo: 'syncRepo',
-  token: 'syncToken',
   branch: 'syncBranch',
-  /** Когда истекает токен. Из заголовка ответа GitHub либо вписано руками. */
-  tokenExpires: 'syncTokenExpires',
   lastAt: 'syncLastAt',
   lastCommit: 'syncLastCommit',
   /** Отпечатки файлов на момент последнего успешного прохода: путь → sha. */
   tree: 'syncTree',
+} as const
+
+/**
+ * Где токен, срок и имя репозитория лежали до общей базы. Читаются только
+ * переездом и после него удаляются (Я-41).
+ */
+const MOVED = {
+  repo: 'syncRepo',
+  token: 'syncToken',
+  tokenExpires: 'syncTokenExpires',
 } as const
 
 const DEFAULT_BRANCH = 'main'
@@ -206,41 +216,75 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
   type S_ = StoreOf<R>
   const layout = createLayout(config)
 
+  /** Переезд — один на экземпляр, то есть на запуск приложения. Провалился — повторится. */
+  let moved: Promise<void> | null = null
+
+  /**
+   * Давние токен, срок и имя из `settings` — в общую базу (Я-35, Я-41):
+   * чего там нет — переезжает, что есть — побеждает. Свои поля удаляются
+   * в обоих случаях: копия токена в `settings`, которую «Забыть» не стирает,
+   * при пустой общей базе переехала бы обратно следующим запуском.
+   */
+  function moveToFamily(): Promise<void> {
+    moved ??= (async () => {
+      const [token, tokenExpires, repo] = await Promise.all([
+        db.settings.get<string>(MOVED.token),
+        db.settings.get<string>(MOVED.tokenExpires),
+        db.settings.get<string>(MOVED.repo),
+      ])
+      if (token === undefined && tokenExpires === undefined && repo === undefined) return
+      await family.adopt(config.dbName, { token, expires: tokenExpires, repo })
+      for (const key of Object.values(MOVED)) await db.settings.remove(key)
+    })().catch((error: unknown) => {
+      moved = null
+      throw error
+    })
+    return moved
+  }
+
   async function readConfig(): Promise<SyncConfig> {
-    const [enabled, repo, token, branch, tokenExpires] = await Promise.all([
+    await moveToFamily()
+    const [enabled, branch, shared] = await Promise.all([
       db.settings.get<boolean>(KEYS.enabled),
-      db.settings.get<string>(KEYS.repo),
-      db.settings.get<string>(KEYS.token),
       db.settings.get<string>(KEYS.branch),
-      db.settings.get<string>(KEYS.tokenExpires),
+      family.read(),
     ])
+    const repo = shared.repos[config.dbName] ?? ''
+    const token = shared.token ?? ''
 
     return {
-      // Выключено по умолчанию: посторонний, открывший приложение, получает
-      // данные в браузере и никакой сети (01-Проект, «Распространение»).
-      enabled: enabled === true,
-      repo: repo ?? '',
-      token: token ?? '',
+      // Выключил или включил человек — так и есть. Не трогал — включено, если
+      // токен и своё имя уже есть (Я-37): вписал токен в одном приложении,
+      // и остальные, чьё имя известно, синхронизируются сами. Вычисляется,
+      // а не пишется (Я-42): сотрут имя — снова выключено. Посторонний,
+      // открывший приложение, токена не имеет — у него данные в браузере
+      // и никакой сети (01-Проект, «Распространение»).
+      enabled: typeof enabled === 'boolean' ? enabled : token !== '' && repo !== '',
+      repo,
+      token,
       branch: branch || DEFAULT_BRANCH,
-      tokenExpires: tokenExpires ?? null,
+      tokenExpires: shared.expires,
     }
   }
 
   async function saveConfig(patch: Partial<SyncConfig>): Promise<void> {
-    const entries: [string, unknown][] = []
-    if (patch.enabled !== undefined) entries.push([KEYS.enabled, patch.enabled])
-    if (patch.repo !== undefined) entries.push([KEYS.repo, patch.repo.trim()])
-    if (patch.token !== undefined) entries.push([KEYS.token, patch.token.trim()])
-    if (patch.branch !== undefined) entries.push([KEYS.branch, patch.branch.trim() || DEFAULT_BRANCH])
-    if (patch.tokenExpires !== undefined) entries.push([KEYS.tokenExpires, patch.tokenExpires])
-
-    for (const [key, value] of entries) await db.settings.set(key, value)
+    // Сначала переезд: иначе давний токен приехал бы поверх только что вписанного.
+    await moveToFamily()
+    if (patch.enabled !== undefined) await db.settings.set(KEYS.enabled, patch.enabled)
+    if (patch.branch !== undefined) await db.settings.set(KEYS.branch, patch.branch.trim() || DEFAULT_BRANCH)
+    if (patch.repo !== undefined) await family.setRepo(config.dbName, patch.repo)
+    // Новый токен стирает срок прежнего (Я-42); срок из той же правки ложится после.
+    if (patch.token !== undefined) await family.setToken(patch.token)
+    if (patch.tokenExpires !== undefined) await family.setExpires(patch.tokenExpires)
   }
 
-  /** Забыть токен. Отдельно от выключения: выключить можно, не стирая доступ. */
+  /**
+   * Забыть токен — во всех приложениях семьи на этом устройстве (Я-41).
+   * Отдельно от выключения: выключить можно, не стирая доступ.
+   */
   async function forgetToken(): Promise<void> {
-    await db.settings.remove(KEYS.token)
-    await db.settings.remove(KEYS.tokenExpires)
+    await moveToFamily()
+    await family.forgetToken()
   }
 
   /**
@@ -544,9 +588,9 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
 
         // Срок жизни токена приезжает заголовком ответа. Не приехал — значит
         // браузеру его читать не разрешили; тогда дата остаётся той, что
-        // вписана руками в настройках.
+        // вписана руками в настройках. Тот же — не переписываем общую базу.
         const expiry = api.tokenExpiry()
-        if (expiry) await saveConfig({ tokenExpires: expiry })
+        if (expiry && expiry !== current.tokenExpires) await saveConfig({ tokenExpires: expiry })
 
         publish({ state: 'idle', error: '', badToken: false, deferred: false })
         await refreshStatus()

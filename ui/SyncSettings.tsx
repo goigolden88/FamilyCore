@@ -214,7 +214,9 @@ export function SyncSettings({ onChanged }: { onChanged: () => Promise<void> }) 
 
       <p className="muted">
         {config.enabled
-          ? 'Токен хранится только в этом браузере и в выгрузку данных не попадает. ' +
+          ? 'Токен хранится только на этом устройстве, один для всех приложений семьи, ' +
+            'и в выгрузку данных не попадает. На iPhone у приложения с экрана «Домой» ' +
+            'хранилище своё — там токен вписывается в каждое. ' +
             'Репозиторий должен быть приватным: в нём лежит всё, что записано в приложении.'
           : 'Пока выключено, данные живут только в этом браузере и никуда не уходят.'}
       </p>
@@ -259,11 +261,18 @@ function StatusLine() {
   )
 }
 
+/** Токен общий (Я-35): что с ним делают здесь, то и во всех приложениях семьи устройства. */
+const SHARED = 'Один для всех приложений семьи на этом устройстве'
+
 /**
  * Токен вводится один раз и дальше не показывается.
  *
  * Показывать его нечем помочь: проверить глазами длинную строку всё равно
  * нельзя, а на чужом экране она лишняя. Заменить — вставить новый.
+ *
+ * Токен лежит в общей базе семьи (Я-35): вписанный здесь, он появляется
+ * в остальных приложениях, забытый — пропадает из всех. Поэтому «Забыть»
+ * спрашивает (Я-41): случайное нажатие стоит токена везде.
  */
 function TokenField({
   config,
@@ -276,30 +285,35 @@ function TokenField({
   const [editing, setEditing] = useState(config.token === '')
   const [value, setValue] = useState('')
 
+  function forget() {
+    const sure = window.confirm(
+      'Забыть токен? Синхронизация остановится во всех приложениях семьи на этом ' +
+        'устройстве, пока токен не вставят снова.',
+    )
+    if (sure) void forgetToken().then(() => setEditing(true))
+  }
+
   if (!editing) {
     return (
       <div className="field">
         Токен доступа
         <div className="row">
-          <span className="muted">Сохранён в этом браузере</span>
+          <span className="muted">Сохранён</span>
           <button type="button" className="btn" onClick={() => setEditing(true)}>
             Заменить
           </button>
-          <button
-            type="button"
-            className="btn btn--danger"
-            onClick={() => void forgetToken().then(() => setEditing(true))}
-          >
+          <button type="button" className="btn btn--danger" onClick={forget}>
             Забыть
           </button>
         </div>
+        <span className="muted">{SHARED}: «Заменить» и «Забыть» — во всех сразу.</span>
       </div>
     )
   }
 
   return (
     <label className="field">
-      Токен доступа
+      Токен доступа — {SHARED.toLowerCase()}
       <input
         type="password"
         autoCapitalize="off"
