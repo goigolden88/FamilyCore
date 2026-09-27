@@ -26,7 +26,7 @@
  * и имя в сообщениях коммитов приходят конфигом, база — аргументом.
  */
 
-import { isDateStr, nowIso, today } from './dates.ts'
+import { nowIso, today } from './dates.ts'
 import type { DateStr } from './dates.ts'
 import type { Db, DirtyRef, StoreData } from './db.ts'
 import { GitHubError, blobSha, createClient, parseRepo } from './github.ts'
@@ -66,20 +66,8 @@ export type SyncConfig = {
   tokenExpires: string | null
 }
 
-/**
- * День, когда истекает токен.
- *
- * GitHub присылает `2027-09-09 12:00:00 +0300`, руками вписывается
- * `2027-09-09` — общее у них первые десять символов. Часовой пояс отброшен
- * намеренно: предупреждение выводится за месяц, и час здесь ничего не решает.
- *
- * null — срок неизвестен. Это не «бессрочный»: показывать надо разное.
- */
-export function expiryDay(value: string | null): DateStr | null {
-  if (!value) return null
-  const day = value.slice(0, 10)
-  return isDateStr(day) ? day : null
-}
+/** День, когда истекает токен, — `core/token.ts` (Я-39); здесь — для прежних импортов. */
+export { expiryDay } from './token.ts'
 
 function configured(config: SyncConfig): boolean {
   return config.enabled && config.repo !== '' && config.token !== ''

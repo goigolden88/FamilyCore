@@ -8,15 +8,16 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { days, daysBetween, formatDate, isDateStr, timeSpan, today } from '../core/dates.ts'
-import { checkAccess, expiryDay, RETRY_MS } from '../core/sync.ts'
+import { checkAccess, RETRY_MS } from '../core/sync.ts'
+import { expiryDay, WARN_DAYS } from '../core/token.ts'
 import type { SyncConfig, SyncStatus } from '../core/sync.ts'
 import { accessWords } from './access.ts'
 import { syncOf, useCore } from './core.tsx'
 import { Fold } from './Fold.tsx'
 import { useSyncStatus } from './useSync.ts'
 
-/** За сколько дней до конца жизни токена начинать предупреждать. Есть в справке. */
-export const WARN_DAYS = 30
+/** Порог предупреждения — `core/token.ts` (Я-39); здесь — для справок приложений. */
+export { WARN_DAYS }
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : 'Неизвестная ошибка'
