@@ -115,11 +115,35 @@ export type Attention = {
   basis: string
 }
 
+/**
+ * Список названий на день расчёта (Я-43): состояние, а не итог отрезка.
+ * Только поля-названия из состава (Я-14) — ни свободного текста, ни имён людей.
+ * «Случайный» выбор делает хозяин от дня расчёта; потребитель показывает
+ * список как есть, в порядке хозяина, — не выбирает и не сортирует (Я-15).
+ */
+export type NameList = {
+  /** Устойчиво между срезами, как у показателя. */
+  key: string
+  /** Нейтральная подпись: «Смотрю». */
+  label: string
+  /** Названия в порядке хозяина; пустой список — тоже ответ. */
+  names: string[]
+  /** Путь экрана, как у «требует внимания» (Я-31). */
+  link: string
+  /** Основание словами: сколько всего, как выбрано. */
+  basis: string
+}
+
 /** Что отдаёт функция среза приложения. Остальное ставит ядро. */
 export type SummaryBody = {
   /** Ровно отрезки `summaryPeriods(day)`, в том же порядке. */
   periods: PeriodSummary[]
   attention: Attention[]
+  /**
+   * Необязательный раздел верхнего уровня (Я-43): нет его — хозяин списков
+   * не отдаёт. Прежний читатель его пропускает, потому `format` прежний.
+   */
+  lists?: NameList[]
 }
 
 export type Summary = SummaryBody & {
@@ -174,6 +198,8 @@ export function buildSummary(
     lastEdit: lastEditOf(data),
     periods: body.periods,
     attention: body.attention,
+    // Нет раздела — нет и ключа: срез без списков остаётся побайтно прежним.
+    ...(body.lists === undefined ? {} : { lists: body.lists }),
   }
 }
 
@@ -305,12 +331,39 @@ function checkAttention(attention: unknown, problems: string[]): void {
   })
 }
 
+function checkLists(lists: unknown, problems: string[]): void {
+  if (!Array.isArray(lists)) {
+    problems.push('lists — не список')
+    return
+  }
+  const keys = new Set<string>()
+  lists.forEach((list: unknown, index) => {
+    const at = `lists[${index}]`
+    if (!isObject(list)) {
+      problems.push(`${at}: не список названий`)
+      return
+    }
+    if (!isText(list.key)) problems.push(`${at}: пустой key`)
+    else if (keys.has(list.key)) problems.push(`${at}: key «${list.key}» повторяется`)
+    else keys.add(list.key)
+    if (!isText(list.label)) problems.push(`${at}: пустая подпись`)
+    if (!Array.isArray(list.names)) problems.push(`${at}: names — не список`)
+    else if (!list.names.every(isText)) problems.push(`${at}: в names — пустое или не строка`)
+    if (typeof list.link !== 'string') problems.push(`${at}: link — не строка`)
+    if (!isText(list.basis)) problems.push(`${at}: нет основания`)
+  })
+}
+
 /**
  * Проверка формы среза. Возвращает его же с типом `Summary` или бросает
  * одну ошибку со всеми найденными расхождениями.
  *
  * Отрезки сверяются с днём расчёта самого среза, а не с сегодняшним: срез,
  * прочитанный через неделю, по-прежнему годен — он просто не свежий.
+ *
+ * Неизвестные разделы верхнего уровня пропускаются, а не отвергаются:
+ * на этом держится правило «необязательный раздел — без нового `format`»
+ * (Я-43, «Цена», п. 3). Строгой к лишним полям проверка стать не должна.
  */
 export function checkSummary(value: unknown): Summary {
   const problems: string[] = []
@@ -328,6 +381,7 @@ export function checkSummary(value: unknown): Summary {
   }
   checkPeriods(value.periods, computedOn, problems)
   checkAttention(value.attention, problems)
+  if (value.lists !== undefined) checkLists(value.lists, problems)
 
   if (problems.length > 0) throw new Error(`Срез итогов не сходится с формой: ${problems.join('; ')}`)
   return value as Summary

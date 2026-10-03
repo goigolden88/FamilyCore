@@ -197,3 +197,55 @@ describe('проверка формы — Я-17, Я-20', () => {
     expect(() => checkSummary(summary)).toThrow(/lastEdit.*attention/)
   })
 })
+
+describe('списки названий — Я-43', () => {
+  const watching = {
+    key: 'watching',
+    label: 'Смотрю',
+    names: ['Книга b1', 'Книга b2'],
+    link: '/books',
+    basis: 'все 2 книги со статусом',
+  }
+
+  function withLists(lists: unknown): unknown {
+    return broken((s) => Object.assign(s, { lists }))
+  }
+
+  it('ядро переносит списки из тела в срез, порядок названий — хозяина', () => {
+    const body = { ...shelfSummary(data, DAY), lists: [{ ...watching, names: ['Б', 'А'] }] }
+    const summary = checkSummary(buildSummary(body, data, DAY))
+    expect(summary.format).toBe(1)
+    expect(summary.lists).toEqual([{ ...watching, names: ['Б', 'А'] }])
+    expect(parseSummary(summaryFile(summary).content)).toEqual(summary)
+  })
+
+  it('нет списков — нет и ключа: срез без них побайтно прежний', () => {
+    const summary = good()
+    expect('lists' in summary).toBe(false)
+    expect(summaryFile(summary).content).not.toContain('lists')
+  })
+
+  it('пустой список названий — тоже ответ; пустой раздел — тоже', () => {
+    expect(() => checkSummary(withLists([{ ...watching, names: [] }]))).not.toThrow()
+    expect(() => checkSummary(withLists([]))).not.toThrow()
+  })
+
+  it('кривой раздел — отказ: не список, повтор ключа, пустая подпись, нет основания', () => {
+    expect(() => checkSummary(withLists({ watching }))).toThrow('lists — не список')
+    expect(() => checkSummary(withLists([watching, watching]))).toThrow('повторяется')
+    expect(() => checkSummary(withLists([{ ...watching, label: ' ' }]))).toThrow('lists[0]: пустая подпись')
+    expect(() => checkSummary(withLists([{ ...watching, basis: '' }]))).toThrow('lists[0]: нет основания')
+    expect(() => checkSummary(withLists([{ ...watching, link: null }]))).toThrow('link — не строка')
+    expect(() => checkSummary(withLists(['watching']))).toThrow('не список названий')
+  })
+
+  it('названия — непустые строки, список — массивом', () => {
+    expect(() => checkSummary(withLists([{ ...watching, names: 'Книга b1' }]))).toThrow('names — не список')
+    expect(() => checkSummary(withLists([{ ...watching, names: ['Книга b1', ''] }]))).toThrow('пустое или не строка')
+    expect(() => checkSummary(withLists([{ ...watching, names: [42] }]))).toThrow('пустое или не строка')
+  })
+
+  it('неизвестный раздел верхнего уровня пропускается — на этом держится format 1 (Я-43, «Цена», п. 3)', () => {
+    expect(() => checkSummary(broken((s) => Object.assign(s, { future: [{ anything: true }] })))).not.toThrow()
+  })
+})
