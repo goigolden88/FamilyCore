@@ -273,6 +273,29 @@ describe('первый запуск', () => {
     expect(JSON.parse(repo.files()['shelves.json'] ?? '[]')[0].id).toBe('i1')
   })
 
+  it('невидимый репозиторий — «не найден», без совета про README', async () => {
+    // Репозиторий не в списке токена: GitHub отвечает 404 и на голову ветки,
+    // и на первый файл. Это не пустой репозиторий.
+    const repo = fakeRepo()
+    const missing = new GitHubError('Репозиторий a/b не найден. Либо в имени опечатка, либо токен выдан не на него.', {
+      status: 404,
+    })
+    repo.api.createFirst = () => Promise.reject(missing)
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
+
+    const result = runSync(repo.api, local.ports)
+    await expect(result).rejects.toThrow('не найден')
+    await expect(result).rejects.not.toThrow('README')
+  })
+
+  it('прочая ошибка заведения — с обходным путём через README', async () => {
+    const repo = fakeRepo()
+    repo.api.createFirst = () => Promise.reject(new GitHubError('Токену не хватает прав', { status: 403 }))
+    const local = fakeDb({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] })
+
+    await expect(runSync(repo.api, local.ports)).rejects.toThrow('README')
+  })
+
   it('заведение не повторяется на непустом репозитории', async () => {
     const repo = fakeRepo(repoWith({ shelves: [item('i1', '2026-09-01T10:00:00.000Z')] }))
     const local = fakeDb({ shelves: [item('i2', '2026-09-02T10:00:00.000Z')] })
