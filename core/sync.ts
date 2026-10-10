@@ -433,11 +433,16 @@ export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) 
    * Кладётся `meta.json` — версия схемы. Она всё равно нужна, и содержательного
    * файла на эту роль лучше нет: пустышка осталась бы мусором навсегда. README
    * приезжает следующим, обычным коммитом того же прохода.
+   *
+   * `head()` отвечает «пусто» и на 404, а 404 GitHub отдаёт и репозиторию,
+   * которого токен не видит. Такой 404 и здесь — значит, репозиторий не пуст,
+   * а не виден: совет про README увёл бы не туда (Журнал Штаба, 10.10.2026).
    */
   async function bootstrap(api: Client): Promise<string> {
     try {
       return await api.createFirst(layout.metaFile(), `${config.name}: заведение репозитория данных`)
     } catch (error) {
+      if (error instanceof GitHubError && error.status === 404) throw error
       const text = error instanceof Error ? error.message : 'Неизвестная ошибка'
       throw new Error(
         `Не вышло положить первый файл в пустой репозиторий: ${text}. ` +
