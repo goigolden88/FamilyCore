@@ -55,10 +55,9 @@ function tokenAlarm(config: SyncConfig | null): string | null {
 }
 
 export function SyncSettings({ onChanged }: { onChanged: () => Promise<void> }) {
-  // В демо синхронизации нет (Я-44): `sync` не создан, и поля здесь были бы враньём.
-  if (useCore().db.demo) {
-    return <p className="muted">В демо синхронизации нет: записи выдуманные и остаются на этом устройстве.</p>
-  }
+  // В демо синхронизации нет (Я-44): `sync` не создан, блок скрыт — о демо
+  // говорят полоса и «Демо-данные».
+  if (useCore().db.demo) return null
   return <SyncForm onChanged={onChanged} />
 }
 
