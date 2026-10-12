@@ -106,6 +106,39 @@ a {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Полоса демо (Я-44): над каждым экраном, пока открыто демо. Прилипает
+   к верху — выдуманные данные не спутать с настоящими ни на каком экране. */
+.demo-bar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  padding: 6px 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 14px;
+}
+
+.demo-bar__leave {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.demo-bar__error {
+  flex-basis: 100%;
+  text-align: center;
+}
+
 .content {
   flex: 1;
   width: 100%;

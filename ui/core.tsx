@@ -35,6 +35,8 @@ type SharedChangeEvent = {
 
 /** База — то, чем пользуется общий интерфейс. */
 export type SharedDb = {
+  /** Демо-база (Я-44). Нет поля — не демо: базу собрали не `createDb`. */
+  demo?: boolean
   settings: KeyValue
   ready(): Promise<void>
   count(store: string): Promise<number>
@@ -44,8 +46,10 @@ export type SharedDb = {
 }
 
 /** Конфиг — то, что из него нужно общему интерфейсу. */
-export type SharedConfig = Pick<AppConfig<StoreMap>, 'name' | 'schemaVersion' | 'about'> & {
+export type SharedConfig = Pick<AppConfig<StoreMap>, 'name' | 'dbName' | 'schemaVersion' | 'about'> & {
   stores: readonly string[]
+  /** Функция демо-данных (Я-44): интерфейсу важно только, есть ли она. */
+  demo?: unknown
 }
 
 export type Core = {
