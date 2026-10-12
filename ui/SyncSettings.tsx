@@ -55,6 +55,13 @@ function tokenAlarm(config: SyncConfig | null): string | null {
 }
 
 export function SyncSettings({ onChanged }: { onChanged: () => Promise<void> }) {
+  // В демо синхронизации нет (Я-44): `sync` не создан, блок скрыт — о демо
+  // говорят полоса и «Демо-данные».
+  if (useCore().db.demo) return null
+  return <SyncForm onChanged={onChanged} />
+}
+
+function SyncForm({ onChanged }: { onChanged: () => Promise<void> }) {
   const { readConfig, saveConfig, syncNow, getStatus } = syncOf(useCore())
   const status = useSyncStatus()
   const [config, setConfig] = useState<SyncConfig | null>(null)

@@ -17,7 +17,8 @@
  * | `reviews`  | по годам, дата — день, месяц или null | контент «Дневников» (Я-09) |
  */
 
-import { inPeriod } from '../core/dates.ts'
+import { addDays, inPeriod, type DateStr } from '../core/dates.ts'
+import { ulid } from '../core/id.ts'
 import type { AppConfig, Base, Migration } from '../core/model.ts'
 import { summaryPeriods, type SummaryBody } from '../core/summary.ts'
 
@@ -151,3 +152,30 @@ export function shelfSummary(data: { sessions: Session[]; books: Book[] }, day: 
     ],
   }
 }
+
+/**
+ * Демо «Полки» (Я-44, Я-45) — образец функции демо: записи каждого
+ * хранилища от дня входа, выдуманные. В умолчание конфига не входит:
+ * демо включают тесты демо, `shelfConfig({ demo: shelfDemo })`.
+ */
+export function shelfDemo(day: DateStr): ShelfData {
+  const at = `${day}T09:00:00.000Z`
+  const stamp = Date.parse(at)
+  const base = (n: number) => ({ id: ulid(stamp + n), updatedAt: at })
+
+  const reading: Shelf = { ...base(1), name: 'Читаю', order: 1 }
+  const done: Shelf = { ...base(2), name: 'Прочитано', order: 2 }
+  const book: Book = { ...base(3), title: 'Остров сокровищ', shelfId: reading.id, addedOn: addDays(day, -20) }
+  const old: Book = { ...base(4), title: 'Робинзон Крузо', shelfId: done.id, addedOn: null, finishedOn: addDays(day, -5) }
+
+  return {
+    shelves: [reading, done],
+    books: [book, old],
+    sessions: [1, 2, 3].map((n) => ({ ...base(10 + n), date: addDays(day, -n), bookId: book.id, minutes: 20 * n })),
+    quotes: [{ ...base(20), bookId: old.id, text: 'Не бойся, когда страшно.' }],
+    reviews: [{ ...base(30), bookId: old.id, writtenOn: addDays(day, -5).slice(0, 7), text: 'Перечитал с удовольствием.' }],
+  }
+}
+
+/** Записи «Полки» по хранилищам — форма ответа функции демо. */
+type ShelfData = { [S in keyof ShelfStores]: ShelfStores[S][] }

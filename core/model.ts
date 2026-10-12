@@ -15,6 +15,7 @@
  */
 
 import type { DateStr } from './dates.ts'
+import { DEMO_SUFFIX } from './demo.ts'
 import { SUMMARY_PATH } from './layout.ts'
 import type { SummaryBody } from './summary.ts'
 
@@ -177,6 +178,15 @@ export type AppConfig<R extends StoreMap> = {
    * Нет функции — нет `summary.json`: приложения переходят на срез по одному.
    */
   summary?: (data: { [S in StoreOf<R>]: R[S][] }, day: DateStr) => SummaryBody
+  /**
+   * Демо-данные (Я-44, Я-45): записи каждого синхронизируемого хранилища от
+   * дня входа в демо — вчерашний план, неделя, месяц, — так даты всегда
+   * живые. Данные выдуманные: репозитории приложений публичные. Ядро кладёт
+   * их в свою базу `<dbName>-demo` при её создании, синхронизации у неё нет.
+   * Нет функции — нет демо: ни предложения, ни пункта в настройках.
+   * Полноту проверяет `checkDemo` (`core/demo.ts`) тестом приложения.
+   */
+  demo?: (day: DateStr) => { [S in StoreOf<R>]: R[S][] }
 }
 
 /**
@@ -216,6 +226,9 @@ export function checkConfig<R extends StoreMap>(config: AppConfig<R>): void {
     }
   }
   if (!config.dbName) problems.push('dbName пустой')
+  if (config.dbName.endsWith(DEMO_SUFFIX)) {
+    problems.push(`dbName «${config.dbName}» кончается на ${DEMO_SUFFIX} — это имя демо-базы (Я-44)`)
+  }
 
   if (problems.length > 0) {
     throw new Error(`Конфиг приложения «${config.name}» не сходится: ${problems.join('; ')}`)

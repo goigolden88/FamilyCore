@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { DemoBar } from './Demo.tsx'
 import { ScrollButtons } from './ScrollButtons.tsx'
 
 /** Вкладка нижней панели: адрес, подпись, совпадение адреса целиком. */
@@ -18,6 +19,8 @@ export type Tab = { to: string; name: string; end: boolean }
 export function Layout({ tabs }: { tabs: readonly Tab[] }) {
   return (
     <div className="layout">
+      {/* В демо — полоса над каждым экраном (Я-44); вне демо её нет. */}
+      <DemoBar />
       <main className="content">
         <Outlet />
       </main>

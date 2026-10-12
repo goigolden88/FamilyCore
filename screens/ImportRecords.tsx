@@ -32,17 +32,22 @@ function describe(error: unknown): string {
  * Разбор разделов и промпт — приложения, из его `registry.ts`; `intro` —
  * его слова над полем: что сюда загружают (Я-03).
  */
-export function ImportRecords<R extends StoreMap>({
-  planImport,
-  importPrompt,
-  intro,
-  onChanged,
-}: {
+export function ImportRecords<R extends StoreMap>(props: ImportProps<R>) {
+  // В демо импорта нет (Я-44): загруженное сотрётся на выходе вместе с демо.
+  if (useCore().db.demo) {
+    return <p className="muted">В демо импорта нет: всё, что записано в демо, сотрётся на выходе.</p>
+  }
+  return <ImportForm {...props} />
+}
+
+type ImportProps<R extends StoreMap> = {
   planImport: PlanImport<R>
   importPrompt: (day: DateStr) => string
   intro: ReactNode
   onChanged: () => Promise<void>
-}) {
+}
+
+function ImportForm<R extends StoreMap>({ planImport, importPrompt, intro, onChanged }: ImportProps<R>) {
   const { config } = useCore()
   const input = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')

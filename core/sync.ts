@@ -211,8 +211,18 @@ const MIN_GAP_MS = 60_000
 /**
  * Синхронизация приложения поверх его базы. Зовётся один раз — из
  * `src/app/core.ts`: состояние прохода и таймеры живут в экземпляре.
+ *
+ * У демо-базы синхронизации нет (Я-44): приложение собирает `sync` только
+ * вне демо — `db.demo ? undefined : createSync(config, db)`. Забыло —
+ * запуск падает здесь, а не везёт выдуманное в репозиторий данных.
  */
 export function createSync<R extends StoreMap>(config: AppConfig<R>, db: Db<R>) {
+  if (db.demo) {
+    throw new Error(
+      `«${config.name}» в демо: синхронизации у демо-базы нет — в app/core.ts ` +
+        'создавай sync только вне демо (Я-44)',
+    )
+  }
   type S_ = StoreOf<R>
   const layout = createLayout(config)
 

@@ -27,7 +27,8 @@
  * базу один раз, в `src/app/core.ts`, и дальше ходит к ней только так.
  */
 
-import { nowIso } from './dates.ts'
+import { nowIso, today } from './dates.ts'
+import { demoDbName, isDemo } from './demo.ts'
 import { checkConfig } from './model.ts'
 import type { AppConfig, Base, Migration, StoreMap, StoreOf } from './model.ts'
 
@@ -364,12 +365,37 @@ export const family = {
 // ─── База приложения ───────────────────────────────────────────────────────
 
 /**
+ * Стереть базу целиком — демо-базу на выходе и перед новым входом (Я-44).
+ * Соединения этой страницы закрываются сами (`onversionchange`); база,
+ * открытая другой вкладкой, — ошибка: стирать её молча из-под вкладки нельзя.
+ */
+export function deleteBase(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error ?? new Error(`База ${name} не стёрлась`))
+    request.onblocked = () =>
+      reject(new Error('База занята другой вкладкой приложения. Закройте её и попробуйте снова.'))
+  })
+}
+
+/**
  * База приложения по его конфигу. Зовётся один раз — из `src/app/core.ts`;
  * две базы одного имени на странице поделили бы соединение и слушателей
  * неправильно.
+ *
+ * Демо (Я-44) — по признаку `localStorage` (`core/demo.ts`), прочитанному
+ * здесь один раз: база `<dbName>-demo`, настоящая не открывается. Тесты
+ * передают режим сами.
  */
-export function createDb<R extends StoreMap>(config: AppConfig<R>) {
+export function createDb<R extends StoreMap>(
+  config: AppConfig<R>,
+  options: { demo?: boolean } = {},
+) {
   checkConfig(config)
+
+  const demo = (options.demo ?? isDemo(config)) && config.demo !== undefined
+  const name = demo ? demoDbName(config.dbName) : config.dbName
 
   type S_ = StoreOf<R>
   const SYNCED: readonly S_[] = config.stores
@@ -410,7 +436,7 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
     if (connection) return connection
 
     connection = new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open(config.dbName, config.schemaVersion)
+      const request = indexedDB.open(name, config.schemaVersion)
 
       request.onupgradeneeded = (event) => {
         const tx = request.transaction
@@ -419,6 +445,14 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
           return
         }
         upgrade(request.result, tx, event.oldVersion)
+        if (demo && event.oldVersion === 0) {
+          try {
+            fillDemo(tx)
+          } catch (error) {
+            tx.abort()
+            reject(new Error(`Демо не собралось: ${error instanceof Error ? error.message : String(error)}`))
+          }
+        }
       }
 
       request.onsuccess = () => {
@@ -486,7 +520,7 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
 
     return new Promise((resolve, reject) => {
       const skipped: string[] = []
-      const request = indexedDB.open(config.dbName, version)
+      const request = indexedDB.open(name, version)
       request.onupgradeneeded = (event) => {
         const tx = request.transaction
         if (!tx) {
@@ -509,6 +543,22 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
       }
       request.onerror = () => reject(request.error ?? new Error('База не создалась'))
     })
+  }
+
+  /**
+   * Демо-записи — в той же транзакции, что создаёт демо-базу (Я-44). Ни один
+   * экран не увидит её пустой: иначе приложение, которое на пустой базе
+   * заводит свои справочники (категории «Делу Время»), успело бы раньше
+   * демо, и справочник задвоился бы. Грязными записи не метятся — отправлять
+   * их некому, `updatedAt` — тот, что дала функция демо.
+   */
+  function fillDemo(tx: IDBTransaction): void {
+    const data = config.demo?.(today())
+    if (!data) return
+    for (const store of config.stores) {
+      const target = tx.objectStore(store)
+      for (const record of data[store] ?? []) target.put(record)
+    }
   }
 
   /**
@@ -856,6 +906,10 @@ export function createDb<R extends StoreMap>(config: AppConfig<R>) {
   // ─── Публичный интерфейс ─────────────────────────────────────────────────
 
   return {
+    /** Демо-база (Я-44): синхронизации у неё нет и быть не может. */
+    demo,
+    /** Имя открываемой базы: `dbName` или `<dbName>-demo`. */
+    name,
     get,
     getAll,
     getByIndex,
