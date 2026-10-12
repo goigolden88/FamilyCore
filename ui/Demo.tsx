@@ -3,7 +3,7 @@ import { family } from '../core/db.ts'
 import { showDemoOffer } from '../core/demo.ts'
 import { useFirstRun } from '../screens/useFirstRun.ts'
 import { useCore } from './core.tsx'
-import { DEMO_OFFERED, LEAVE_CONFIRM, enterDemo, leaveDemo } from './demo.ts'
+import { DEMO_OFFERED, ENTER_CONFIRM, LEAVE_CONFIRM, enterDemo, leaveDemo } from './demo.ts'
 import { Fold } from './Fold.tsx'
 
 /**
@@ -116,7 +116,7 @@ export function DemoOffer({ own }: { own: readonly string[] }) {
   )
 }
 
-/** Блок настроек «Демо-данные»: вход в любой момент, в демо — выход (Я-44). */
+/** Блок настроек «Демо-данные»: вход в любой момент, в демо — выход (Я-44); оба — с вопросом (Я-45, Я-46). */
 export function DemoSettings() {
   const { config, db } = useCore()
   const [error, setError] = useState('')
@@ -129,6 +129,8 @@ export function DemoSettings() {
       if (!window.confirm(LEAVE_CONFIRM)) return
       leaveDemo(config.dbName).catch((reason: unknown) => setError(errorText(reason)))
     } else {
+      // Вход — тоже с вопросом (Я-46): случайное нажатие не уводит в демо молча.
+      if (!window.confirm(ENTER_CONFIRM)) return
       enterDemo(config.dbName).catch((reason: unknown) => setError(errorText(reason)))
     }
   }
