@@ -2,8 +2,8 @@
  * Установка иконкой (Р-69 «Дневников»): что сказать человеку и что предложить.
  *
  * Совет выбирается чистой функцией из четырёх фактов — открыто ли
- * установленным, установили ли только что, iPhone ли это, предлагает ли
- * браузер установку сам, — и проверяется тестами. Остальное здесь —
+ * установленным, установили ли только что, iPhone ли это, Safari ли на Маке,
+ * предлагает ли браузер установку сам, — и проверяется тестами. Остальное здесь —
  * чтение этих фактов из браузера.
  *
  * Событие `beforeinstallprompt` Chrome присылает один раз и рано, до первого
@@ -20,6 +20,8 @@ export type InstallAdvice =
   | 'prompt'
   /** iPhone или iPad во вкладке: только руками, через «Поделиться». */
   | 'ios'
+  /** Safari на Маке во вкладке: «Файл» → «Добавить в Dock» (macOS 14+). */
+  | 'mac-safari'
   /** Браузер установку сам не предлагает — через его меню. */
   | 'manual'
 
@@ -29,6 +31,7 @@ export type InstallFacts = {
   /** Установили из этой вкладки только что. */
   justInstalled: boolean
   ios: boolean
+  macSafari: boolean
   canPrompt: boolean
 }
 
@@ -37,12 +40,27 @@ export function installAdvice(facts: InstallFacts): InstallAdvice {
   // На iPhone кнопки не бывает: Safari события не присылает вовсе.
   if (facts.ios) return 'ios'
   if (facts.canPrompt) return 'prompt'
+  // Safari события тоже не присылает, а «меню браузера» у него — «Файл».
+  if (facts.macSafari) return 'mac-safari'
   return 'manual'
 }
 
 /** iPhone или iPad. Новый iPad называет себя Маком — выдаёт его сенсорный экран. */
 export function isIos(userAgent: string, platform: string, touchPoints: number): boolean {
   return /iPhone|iPad|iPod/.test(userAgent) || (platform === 'MacIntel' && touchPoints > 1)
+}
+
+/**
+ * Safari на Маке. Строку «Safari/» пишут и Chrome, и Edge, и прочие на его
+ * движке — их выдаёт своё имя. Сенсорный «Мак» — это iPad (`isIos`).
+ */
+export function isMacSafari(userAgent: string, platform: string, touchPoints: number): boolean {
+  return (
+    platform === 'MacIntel' &&
+    touchPoints <= 1 &&
+    /Safari\//.test(userAgent) &&
+    !/Chrome|Chromium|CriOS|Edg|OPR|YaBrowser|Firefox|FxiOS/.test(userAgent)
+  )
 }
 
 // ─── Браузер ───────────────────────────────────────────────────────────────
@@ -55,7 +73,13 @@ type InstallPromptEvent = Event & {
 
 let deferred: InstallPromptEvent | null = null
 let justInstalled = false
-let facts: InstallFacts = { standalone: false, justInstalled: false, ios: false, canPrompt: false }
+let facts: InstallFacts = {
+  standalone: false,
+  justInstalled: false,
+  ios: false,
+  macSafari: false,
+  canPrompt: false,
+}
 const listeners = new Set<() => void>()
 
 function refresh(): void {
@@ -65,6 +89,7 @@ function refresh(): void {
     standalone: window.matchMedia('(display-mode: standalone)').matches || legacy.standalone === true,
     justInstalled,
     ios: isIos(navigator.userAgent, navigator.platform, navigator.maxTouchPoints),
+    macSafari: isMacSafari(navigator.userAgent, navigator.platform, navigator.maxTouchPoints),
     canPrompt: deferred !== null,
   }
   for (const listener of listeners) listener()
