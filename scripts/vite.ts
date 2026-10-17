@@ -40,6 +40,13 @@ export type FamilyApp = {
   shortcuts?: readonly { name: string; url: string }[]
   /** Остальное в манифесте, что есть не у всех: `share_target` у «Делу Время». */
   manifest?: Partial<ManifestOptions>
+  /**
+   * Имя файла манифеста; нет — `manifest.webmanifest`. Новое имя — выход,
+   * когда Chrome на Android пишет «уже установлено», а приложения на телефоне
+   * нет: застрявшая установка WebAPK привязана к адресу манифеста (Я-47,
+   * Р-08 «Фишек»). Меняется один раз: установленные копии помнят адрес.
+   */
+  manifestFilename?: string
 }
 
 export function familyVite(app: FamilyApp): UserConfig {
@@ -78,6 +85,8 @@ export function familyVite(app: FamilyApp): UserConfig {
         registerType: 'autoUpdate',
 
         includeAssets: ['favicon.svg', 'apple-touch-icon-180x180.png'],
+
+        manifestFilename: app.manifestFilename ?? 'manifest.webmanifest',
 
         manifest: {
           id: BASE,
